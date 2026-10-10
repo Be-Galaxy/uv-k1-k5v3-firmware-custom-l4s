@@ -24,15 +24,15 @@ Body: `command:u16 | payload length:u16 | version:u8=1 | reserved:u8=0 | sequenc
 
 Modes: FM=0, AM=1, USB receive=2, CW=3. TX accepts FM/CW only. PTT-ON is for FM voice; CW uses its own firmware playback engine. Readiness requires PAIR and MODE to have been applied. After STOP/PTT-OFF, apply a newer PAIR revision before requesting another transmission.
 
-Results: APPLIED=0, ACCEPTED=1, BAD_LENGTH=2, BAD_SESSION=3, BUSY=4, RANGE=5, UNSUPPORTED=6, TX_REJECTED=7, CANCELLED=8, STALE=9, NOT_READY=10, TIMEOUT=11. ACCEPTED is not proof of an applied frequency. Poll the applied revision before keying. During TX, only the newest pending pair is kept; the default build applies it after TX ends. STOP cancels pending work.
+Results: APPLIED=0, ACCEPTED=1, BAD_LENGTH=2, BAD_SESSION=3, BUSY=4, RANGE=5, UNSUPPORTED=6, TX_REJECTED=7, CANCELLED=8, STALE=9, NOT_READY=10, TIMEOUT=11. ACCEPTED acknowledges a queued CW operation, not an applied frequency. During voice TX or an entire CW message (including key-up gaps), PAIR returns BUSY: neither RX nor TX may be tuned or queued. After confirmed TX end, the application recomputes a fresh frequency pair for the current time and resumes tracking. The pending-revision field is reserved and remains zero.
 
 ## Replies
 
 HELLO data (42 bytes): `L4S1` (4), family:u8=3, features:u32, resolution Hz:u16=10, max text:u8=92, minimum WPM:u8=10, maximum WPM:u8=45, watchdog ms:u16=1500, RX envelope minimum Hz:u32, maximum Hz:u32, firmware label:16 zero-padded ASCII bytes, RX mode mask:u8, TX mode mask:u8. Family 3 denotes the shared UV-K1/K5 V3 firmware, not an individually detected model. The RX envelope includes gaps; every frequency is still validated by the firmware. TX is governed by the existing radio frequency lock and per-channel TX lock.
 
-Feature bits: atomic pair=1, PTT=2, CW text=4, CTCSS=8, live FM TX retune=16, CW-gap retune=32. Default builds do not advertise the last two before hardware validation.
+Feature bits: atomic pair=1, PTT=2, CW text=4, CTCSS=8. Bits 16/32 are reserved and never advertised: TX/RX Doppler control is prohibited during all transmission, including CW gaps.
 
-Other replies contain a 24-byte snapshot: RX Hz:u32, TX Hz:u32, applied revision:u32, pending revision:u32, RX mode:u8, TX mode:u8, TX enabled:u8, TX state:u8, CW state:u8, CW character position:u8, CW total:u8, last error:u8. TX state: OFF=0, remote voice=1, CW operation=2, local TX=3. CW state: IDLE=0, QUEUED=1, SENDING=2, DONE=3, CANCELLED=4, FAILED=5. A CW operation includes its key-up gaps; it does not mean the carrier is continuously on.
+Other replies contain a 24-byte snapshot: RX Hz:u32, TX Hz:u32, applied revision:u32, pending revision:u32, RX mode:u8, TX mode:u8, TX enabled:u8, TX state:u8, CW state:u8, CW character position:u8, CW total:u8, last error:u8. TX state: OFF=0, remote voice=1, CW operation=2, local TX=3. CW state: IDLE=0, QUEUED=1, SENDING=2, DONE=3, CANCELLED=4, FAILED=5. A CW operation includes key-up gaps and boundaries between text chunks. After DONE, send the next CW chunk or STOP to release the operation; neither PAIR nor MODE/TONE is accepted until STOP. The TOT deadline starts at the first chunk and is not reset by later chunks. TX state 2 is an operation reservation, not proof that the carrier is continuously on.
 
 Frequency values mean intended RF frequency, not a CW BFO/sidetone offset. The firmware rounds to the nearest 10 Hz and applies its existing receive BFO once. Remote sessions temporarily disable CW cross-mode offset. Software state/readback is not a measured RF frequency.
 

@@ -226,6 +226,16 @@
             }
         },
         {
+            "name": "L4S",
+            "inherits": "CW",
+            "cacheVariables": {
+                "ENABLE_L4S_CONTROL": true,
+                "EDITION_STRING": "L4S Control",
+                "VERSION_STRING_2": "L4S-v1-alpha1",
+                "TARGET": "l4s.control"
+            }
+        },
+        {
             "name": "CW",
             "inherits": "default",
             "cacheVariables": {
@@ -254,6 +264,10 @@
         }
     ],
     "buildPresets": [
+        {
+            "name": "L4S",
+            "configurePreset": "L4S"
+        },
         {
             "name": "Custom",
             "configurePreset": "Custom"

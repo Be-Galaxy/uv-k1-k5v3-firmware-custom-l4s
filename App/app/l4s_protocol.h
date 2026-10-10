@@ -52,11 +52,11 @@ typedef struct {
 
 typedef struct {
     const L4S_Ops *ops;
-    L4S_Pair applied, pending;
-    uint32_t session, retired_session, last_alive;
+    L4S_Pair applied;
+    uint32_t session, retired_session, last_alive, tx_started;
     uint16_t last_seq, last_cmd, last_hash;
     uint8_t last_result, rx_mode, tx_mode, narrow, owner, cw_state, cw_length, error;
-    bool have_seq, have_pending, pair_ready, mode_ready;
+    bool have_seq, pair_ready, mode_ready, tx_window_open;
 } L4S_State;
 
 void L4S_Init(L4S_State *s, const L4S_Ops *ops);

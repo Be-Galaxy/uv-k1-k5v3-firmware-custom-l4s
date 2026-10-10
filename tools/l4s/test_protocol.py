@@ -108,15 +108,27 @@ class ProtocolTest(unittest.TestCase):
         self.now += 501
         self.assertEqual(3, self.send(STATUS)[5])
 
-    def test_transmit_queues_only_latest_pair(self):
+    def test_transmit_freezes_both_frequencies_and_rejects_updates(self):
         self.ready()
         self.send(PTT, b'\1'+struct.pack('<I', 1))
-        self.assertEqual(1, self.pair(2, tx=145900010)[5])
+        self.assertEqual(4, self.pair(2, tx=145900010)[5])
         reply = self.pair(3, tx=145900020)
-        self.assertEqual((1, 3), (Snapshot.parse(reply).revision, Snapshot.parse(reply).pending_revision))
+        self.assertEqual(4, reply[5])
+        self.assertEqual((1, 0), (Snapshot.parse(reply).revision, Snapshot.parse(reply).pending_revision))
+        self.assertEqual((435100000,145900000), (Snapshot.parse(reply).rx_hz,Snapshot.parse(reply).tx_hz))
         self.send(STOP)
         self.assertEqual(0, Snapshot.parse(self.send(STATUS)).pending_revision)
         self.assertEqual(1, self.fw.lib.Host_Writes())
+
+    def test_cw_operation_freezes_pair_until_message_is_done(self):
+        self.ready(cw=True)
+        self.send(CW, bytes([20, 2])+b'CQ')
+        self.assertEqual(4, self.pair(2,rx=435100010,tx=145900010)[5])
+        self.now += 300
+        self.send(KEEPALIVE)
+        self.assertEqual(4, self.pair(3,rx=435100020,tx=145900020)[5])
+        self.send(STOP)
+        self.assertEqual(0, self.pair(3,rx=435100020,tx=145900020)[5])
 
     def test_old_session_cannot_key_and_new_open_cannot_steal(self):
         self.ready()

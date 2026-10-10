@@ -325,6 +325,32 @@ void CW_StartMacroPlayback(uint8_t macroIndex, bool repeat)
 }
 
 // Stop playback immediately (user interrupted)
+#ifdef ENABLE_L4S_CONTROL
+bool CW_StartTextPlayback(const uint8_t *text, uint8_t length)
+{
+    if (!length || length >= sizeof(s_playback_buf) || gCW_Recording || gCW_PlaybackActive) return false;
+    bool have_char=false;
+    for (unsigned i=0;i<length;i++) {
+        uint8_t pattern, count;
+        if (text[i]==' ') continue;
+        if (!CW_GetMorseForChar(text[i],&pattern,&count)) return false;
+        have_char=true;
+    }
+    if (!have_char) return false;
+    CW_KeyerInit();
+    memcpy(s_playback_buf,text,length); s_playback_buf[length]=0;
+    s_playback_buf_len=length; s_playback_pos=0;
+    s_play_elem_index=s_play_char_len=s_play_char_pattern=0;
+    gCW_PlaybackRepeat=false; gCW_MessageRepeatCountdown_500ms=0;
+    CW_ClearTxDisplay(); s_play_space_pending=false;
+    s_pb_state=PB_STATE_INTER_CHAR_GAP; s_elem_start_count=millis();
+    gCW_PlaybackActive=true;
+    return true;
+}
+
+uint8_t CW_TextPlaybackPosition(void) { return s_playback_pos; }
+#endif
+
 void CW_StopPlayback(void)
 {
     gCW_PlaybackActive = false;

@@ -21,6 +21,9 @@
 
 #include "misc.h"
 #include "app/cwhardware.h"
+#ifdef ENABLE_L4S_CONTROL
+#include "app/l4s_control.h"
+#endif
 #include "settings.h"
 #include "py32f071_ll_dma.h"
 #include "py32f071_ll_gpio.h"
@@ -476,6 +479,9 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
 // Read GPIO inputs based on configured mode
 void CW_ReadKeys(CW_Input *in)
 {
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_BlockPhysicalPtt()) { memset(in,0,sizeof(*in)); return; }
+#endif
     bool n_dit = false;
     bool n_dah = false;
 

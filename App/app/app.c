@@ -71,6 +71,9 @@
 #include "functions.h"
 #include "helper/battery.h"
 #include "misc.h"
+#ifdef ENABLE_L4S_CONTROL
+#include "app/l4s_control.h"
+#endif
 #include "radio.h"
 #include "settings.h"
 
@@ -1522,7 +1525,11 @@ void CheckKeys(void)
 
 // -------------------- PTT ------------------------
 #ifdef ENABLE_CW_MODULATOR
-	if (!gCW_KeyerManagesPtt)   // CW keyer owns PTT entirely when active
+    if (!gCW_KeyerManagesPtt
+#ifdef ENABLE_L4S_CONTROL
+        && !L4S_BlockPhysicalPtt()
+#endif
+    )   // CW keyer or L4S session owns PTT while active
     {
 #endif
     const bool serialConfigInProgress = SerialConfigInProgress();
@@ -2068,6 +2075,9 @@ void APP_TimeSlice500ms(void)
     }
 
     if(gCurrentFunction != FUNCTION_TRANSMIT && !FUNCTION_IsRx()
+#ifdef ENABLE_L4S_CONTROL
+        && !L4S_Active()
+#endif
     #ifdef ENABLE_AIRCOPY
         && gScreenToDisplay != DISPLAY_AIRCOPY
     #endif
@@ -2330,6 +2340,9 @@ static void ALARM_Off(void)
 
 static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_LocalKey(bKeyPressed)) return;
+#endif
 #ifdef ENABLE_CODE_PRACTICE
 	if (gCW_CpoActive) {
 		if (Key == KEY_EXIT) {

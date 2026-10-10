@@ -100,6 +100,14 @@ enable_feature(ENABLE_UART
     # driver/aes.c
 )
 
+if(ENABLE_L4S_CONTROL)
+    if(NOT ENABLE_USB OR NOT ENABLE_FEAT_NR7Y_CW)
+        message(FATAL_ERROR "L4S control requires USB CDC and the NR7Y CW engine")
+    endif()
+    target_compile_definitions(App INTERFACE ENABLE_L4S_CONTROL)
+    target_sources(App INTERFACE app/l4s_control.c app/l4s_protocol.c)
+endif()
+
 if(ENABLE_USB)
     target_link_libraries(App INTERFACE CherryUSB)
     target_compile_definitions(App INTERFACE ENABLE_USB)

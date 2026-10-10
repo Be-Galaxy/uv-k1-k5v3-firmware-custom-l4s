@@ -24,6 +24,10 @@
     #include "app/fm.h"
 #endif
 #include "app/uart.h"
+#ifdef ENABLE_L4S_CONTROL
+#include "app/l4s_control.h"
+static uint16_t l4s_uart_size, l4s_vcp_size;
+#endif
 #include "board.h"
 #include "py32f071_ll_dma.h"
 #include "driver/backlight.h"
@@ -779,6 +783,10 @@ bool UART_IsCommandAvailable(uint32_t Port)
 
     Crc = pUART_Command->Buffer[Size] | (pUART_Command->Buffer[Size + 1] << 8);
 
+#ifdef ENABLE_L4S_CONTROL
+    if (Port == UART_PORT_VCP) l4s_vcp_size=Size;
+    else l4s_uart_size=Size;
+#endif
     return CRC_Calculate(pUART_Command->Buffer, Size) == Crc;
 }
 
@@ -804,6 +812,10 @@ void UART_HandleCommand(uint32_t Port)
         return;
     }
 
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_HandleUart(Port,pUART_Command->Buffer,
+        Port == UART_PORT_VCP ? l4s_vcp_size : l4s_uart_size)) return;
+#endif
     switch (pUART_Command->Header.ID)
     {
         case 0x0514:

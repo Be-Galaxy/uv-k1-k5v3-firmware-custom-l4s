@@ -1,5 +1,8 @@
 #include "usbd_core.h"
 #include "usbd_cdc.h"
+#ifdef ENABLE_L4S_CONTROL
+#include "app/l4s_control.h"
+#endif
 
 /*!< endpoint address */
 #define CDC_IN_EP  0x81
@@ -181,6 +184,9 @@ void usbd_cdc_acm_set_dtr(uint8_t intf, bool dtr)
         dtr_enable = 1;
     } else {
         dtr_enable = 0;
+#ifdef ENABLE_L4S_CONTROL
+        L4S_UsbLost();
+#endif
     }
 }
 

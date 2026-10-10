@@ -26,7 +26,7 @@ static void stop(void) { tx=0; active=false; }
 static bool cw(const uint8_t *text,uint8_t n,uint8_t wpm) {
     (void)wpm;
     if(denied)return false;
-    for(unsigned i=0;i<n;i++) if(!strchr("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /?.,=-",text[i]))return false;
+    for(unsigned i=0;i<n;i++) if(!strchr("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /?.,=-+(&",text[i]))return false;
     active=true; tx=L4S_TX_CW; cw_start_ms=clock_ms; starts++; return true;
 }
 static uint8_t tx_state(void) { return tx; }
