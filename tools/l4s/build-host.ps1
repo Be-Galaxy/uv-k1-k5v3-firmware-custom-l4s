@@ -1,0 +1,12 @@
+param([string]$Compiler='H:\tools\msys64\ucrt64\bin\gcc.exe')
+$ErrorActionPreference='Stop'
+$env:PATH=(Split-Path -Parent $Compiler)+';'+$env:PATH
+$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$hostOutput=Join-Path $repoRoot 'build/host'
+New-Item -ItemType Directory -Path $hostOutput -Force | Out-Null
+& $Compiler -std=c11 -Wall -Wextra -Werror -shared -O2 `
+    -I (Join-Path $repoRoot 'App/app') `
+    (Join-Path $repoRoot 'App/app/l4s_protocol.c') `
+    (Join-Path $PSScriptRoot 'host.c') `
+    -o (Join-Path $hostOutput 'l4s_host.dll')
+if ($LASTEXITCODE -ne 0) { throw 'Host protocol library failed to build' }
