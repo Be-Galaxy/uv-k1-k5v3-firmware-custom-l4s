@@ -1,7 +1,7 @@
 import ctypes
 import struct
 import unittest
-from protocol import body, OPEN, MODE, PAIR, PTT, CW, STOP
+from protocol import body, OPEN, MODE, PAIR, PTT, CW, STOP, CONTEXT
 from simulator import Firmware
 
 class DisplayTest(unittest.TestCase):
@@ -28,37 +28,59 @@ class DisplayTest(unittest.TestCase):
     def test_received_pair_is_rendered_in_rf_hz(self):
         self.pair()
         lines=self.render()
-        self.assertEqual('RX 435.10001',lines[1])
-        self.assertEqual('TX 145.90000',lines[3])
-        self.assertIn('TRACKING',lines[5])
-        self.assertIn('EXIT:STOP',lines[6])
+        self.assertEqual('RX 435.10001',lines[2])
+        self.assertEqual('TX 145.90000',lines[4])
+        self.assertIn('TRACKING',lines[6])
+        self.assertIn('EXIT',lines[6])
 
     def test_voice_tx_hold_rejects_retune_and_keeps_displayed_pair(self):
         self.send(MODE,b'\0\0\0');self.pair()
         self.send(PTT,b'\1'+struct.pack('<I',1))
         self.assertEqual(4,self.pair(rx=435110000,revision=2)[5])
         lines=self.render()
-        self.assertEqual('RX 435.10001',lines[1])
-        self.assertIn('HOLD',lines[5])
+        self.assertEqual('RX 435.10001',lines[2])
+        self.assertIn('HOLD',lines[6])
         self.send(STOP)
-        self.assertNotIn('HOLD',self.render()[5])
+        self.assertNotIn('HOLD',self.render()[6])
 
     def test_completed_cw_window_remains_held_until_stop(self):
         self.send(MODE,b'\3\3\0');self.pair()
         self.send(CW,b'\24\4TEST')
         self.fw.lib.Host_Tick(500)
-        self.assertIn('CW 4/4',self.render()[5])
-        self.assertIn('HOLD',self.render()[5])
+        self.assertIn('CW 4/4',self.render()[6])
+        self.assertIn('HOLD',self.render()[6])
 
     def test_receive_only_and_largest_rx_frequency_fit_screen(self):
         self.pair(rx=1300000000,tx=0,enabled=0)
         lines=self.render()
-        self.assertEqual('RX 1300.00000',lines[1])
-        self.assertEqual('TX ---.-----',lines[3])
+        self.assertEqual('RX 1300.00000',lines[2])
+        self.assertEqual('TX DISABLED',lines[4])
 
     def test_physical_ptt_has_its_own_source_label(self):
         self.send(MODE,b'\0\0\0');self.pair()
         self.assertEqual(0,self.fw.lib.Host_LocalPtt(1,10))
-        self.assertEqual('LOCAL TX / HOLD',self.render()[5])
+        self.assertEqual('LOCAL TX HOLD EXIT',self.render()[6])
+
+    def test_satellite_live_context_and_below_horizon_elevation(self):
+        self.pair()
+        self.send(CONTEXT,struct.pack('<Hh16s',1370,-340,b'DOSAAF-85'))
+        lines=self.render()
+        self.assertEqual('DOSAAF-85',lines[0])
+        self.assertEqual('Az:137 El:-34',lines[1])
+        self.send(CONTEXT,struct.pack('<Hh16s',3599,900,b'ABCDEFGHIJKLMNOP'))
+        self.render()  # Longest name / angular extrema remain inside the LCD.
+
+    def test_context_update_during_tx_does_not_tune_or_steal_ptt(self):
+        self.send(MODE,b'\0\0\0');self.pair()
+        self.fw.lib.Host_LocalPtt(1,10)
+        writes=self.fw.lib.Host_Writes()
+        self.assertEqual(0,self.send(CONTEXT,struct.pack('<Hh16s',1000,200,b'ISS'))[5])
+        self.assertEqual(writes,self.fw.lib.Host_Writes())
+        self.assertEqual('LOCAL TX HOLD EXIT',self.render()[6])
+
+    def test_invalid_context_does_not_replace_valid_display(self):
+        self.send(CONTEXT,struct.pack('<Hh16s',1000,200,b'ISS'))
+        self.assertEqual(5,self.send(CONTEXT,struct.pack('<Hh16s',3600,200,b'BAD'))[5])
+        self.assertEqual('ISS',self.render()[0])
 
 if __name__=='__main__': unittest.main()

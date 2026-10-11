@@ -108,6 +108,16 @@ static size_t snapshot(L4S_State *s, uint8_t *p)
 static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
 {
     switch (cmd) {
+    case L4S_CONTEXT: {
+        if (n!=20) return L4S_BAD_LENGTH;
+        const uint16_t az=L4S_Read16(p);
+        const int16_t el=(int16_t)L4S_Read16(p+2);
+        if (az>=3600 || el < -900 || el>900) return L4S_RANGE;
+        for (unsigned i=4;i<20;i++) if (p[i] && (p[i]<' ' || p[i]>'~')) return L4S_RANGE;
+        memcpy(s->satellite_name,p+4,16); s->satellite_name[16]=0;
+        s->azimuth_tenths=az; s->elevation_tenths=el; s->context_valid=true;
+        return L4S_APPLIED; /* Display-only; does not tune or change TX ownership. */
+    }
     case L4S_KEEPALIVE: case L4S_STATUS:
         return n == 0 ? L4S_APPLIED : L4S_BAD_LENGTH;
     case L4S_STOP:
@@ -170,7 +180,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
     if (length < 12 || length > L4S_MAX_BODY || L4S_Read16(body+2) != length - 4) return 0;
     const uint16_t cmd=L4S_Read16(body), seq=L4S_Read16(body+6);
     const uint32_t session=L4S_Read32(body+8);
-    if (cmd < L4S_HELLO || cmd > L4S_STOP) return 0;
+    if (cmd < L4S_HELLO || cmd > L4S_CONTEXT) return 0;
     L4S_Tick(s, now);
     uint8_t result=L4S_APPLIED;
     if (body[4] != L4S_VERSION || body[5] != 0) result=L4S_UNSUPPORTED;
@@ -184,6 +194,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
             s->session=session; s->have_seq=false; s->applied.revision=0;
             s->pair_ready=s->mode_ready=false; s->cw_state=L4S_CW_IDLE;
             s->error=0; s->last_alive=now;
+            s->context_valid=false;
         }
     } else if (!s->session || session != s->session) result=L4S_BAD_SESSION;
     else {
@@ -208,7 +219,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
     if (cmd == L4S_HELLO && result == L4S_APPLIED) {
         uint8_t *p=out+12;
         memcpy(p,"L4S1",4); p[4]=3; /* UV-K1 / UV-K5 V3 shared firmware */
-        uint32_t features=L4S_CAP_PAIR|L4S_CAP_PTT|L4S_CAP_CW|L4S_CAP_TONE;
+        uint32_t features=L4S_CAP_PAIR|L4S_CAP_PTT|L4S_CAP_CW|L4S_CAP_TONE|L4S_CAP_CONTEXT;
         L4S_Write32(p+5,features);
         L4S_Write16(p+9,10); p[11]=L4S_MAX_TEXT; p[12]=10; p[13]=45;
         L4S_Write16(p+14,L4S_TIMEOUT_MS);

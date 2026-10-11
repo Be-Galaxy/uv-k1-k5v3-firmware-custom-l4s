@@ -245,7 +245,7 @@ void L4S_ProcessKeys(KEY_Code_t key, bool pressed, bool held)
 bool L4S_HandleUart(uint32_t port, const uint8_t *body, size_t size)
 {
     uint16_t cmd=size>=2 ? L4S_Read16(body) : 0;
-    if (cmd<L4S_HELLO || cmd>L4S_STOP) {
+    if (cmd<L4S_HELLO || cmd>L4S_CONTEXT) {
         if (L4S_Active()) L4S_Abort(&state,L4S_CANCELLED);
         return false;
     }

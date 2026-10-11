@@ -4,7 +4,7 @@ import ctypes
 import struct
 from pathlib import Path
 from PIL import Image, ImageDraw
-from protocol import body, OPEN, MODE, PAIR, PTT, CW
+from protocol import body, OPEN, MODE, PAIR, PTT, CW, CONTEXT
 from simulator import Firmware
 
 def main():
@@ -20,6 +20,7 @@ def main():
             seq+=1
             return fw.request(body(command,seq,123,data),10)
         send(OPEN);send(MODE,bytes([3 if index==2 else 0]*2+[0]))
+        send(CONTEXT,struct.pack('<Hh16s',1370,340,b'DOSAAF-85'))
         send(PAIR,struct.pack('<IIBI',435100010,145900000,1,1))
         if index==1: send(PTT,b'\1'+struct.pack('<I',1))
         if index==2: send(CW,b'\24\4TEST')

@@ -27,8 +27,11 @@ void UI_PrintString(const char *text,uint8_t start,uint8_t end,uint8_t row,uint8
 }
 void UI_PrintStringSmallNormal(const char *text,uint8_t start,uint8_t end,uint8_t row)
 {
-    (void)end;
     size_t n=strlen(text);
+    if (end>start) {
+        if (n*7>(unsigned)(end-start+1)) { overflow++; return; }
+        start+=(end-start-n*7+1)/2;
+    }
     if (row>=7 || start+n*7>128 || n>=sizeof(lines[0])) { overflow++; return; }
     memcpy(lines[row],text,n+1);
     for (unsigned i=0;i<n;i++) if (text[i]>' ' && text[i]<127)

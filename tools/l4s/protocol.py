@@ -3,7 +3,7 @@ import struct
 from dataclasses import dataclass
 
 MASK = bytes.fromhex("166c14e62e910d402135d5401303e980")
-HELLO, OPEN, KEEPALIVE, CLOSE, STATUS, PAIR, MODE, TONE, PTT, CW, STOP = range(0x700, 0x70B)
+HELLO, OPEN, KEEPALIVE, CLOSE, STATUS, PAIR, MODE, TONE, PTT, CW, STOP, CONTEXT = range(0x700, 0x70C)
 MAX_BODY = 120
 
 def crc(data: bytes) -> int:
