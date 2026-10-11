@@ -21,6 +21,9 @@
 #include <stdbool.h>
 
 #include "app/cwapp.h"
+#ifdef ENABLE_L4S_CONTROL
+#include "app/l4s_control.h"
+#endif
 #include "app/cwkeyer.h"
 #include "app/cwmacro.h"
 #include "app/app.h"
@@ -76,6 +79,10 @@ void CW_EndTxNow(void)
 // ---------------------------------------------------------------------------
 void CW_AppUpdate(void)
 {
+#ifdef ENABLE_L4S_CONTROL
+    /* Session PTT is debounced/owned by L4S; never let the handkey path rekey independently. */
+    if (L4S_Active() && !gCW_PlaybackActive) return;
+#endif
 	if (!(gTxVfo->Modulation == MODULATION_CW
 #ifdef ENABLE_CODE_PRACTICE
 		|| gCW_CpoActive

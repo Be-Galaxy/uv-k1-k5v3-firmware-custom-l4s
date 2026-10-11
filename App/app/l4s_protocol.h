@@ -62,6 +62,8 @@ typedef struct {
 void L4S_Init(L4S_State *s, const L4S_Ops *ops);
 void L4S_Tick(L4S_State *s, uint32_t now);
 void L4S_Abort(L4S_State *s, uint8_t reason);
+uint8_t L4S_LocalPtt(L4S_State *s, bool pressed, uint32_t now);
+void L4S_StopTx(L4S_State *s, uint8_t reason);
 /* Input/output are the unobfuscated body, including legacy ID/size header. */
 size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now, uint8_t *reply);
 uint16_t L4S_Crc(const uint8_t *data, size_t length);

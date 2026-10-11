@@ -21,6 +21,11 @@
 
 static L4S_State state;
 static bool initialized, release_latch;
+static bool key_release_latch;
+static uint32_t last_display_ms;
+static bool ptt_raw, ptt_down;
+static bool local_ptt_request;
+static uint32_t ptt_changed_ms;
 static volatile bool usb_lost;
 static struct {
     VFO_Info_t vfo[2];
@@ -30,6 +35,7 @@ static struct {
 } saved;
 
 bool L4S_Active(void) { return state.session != 0; }
+const L4S_State *L4S_GetState(void) { return &state; }
 bool L4S_BlockPhysicalPtt(void) { return L4S_Active() || release_latch; }
 void L4S_UsbLost(void) { usb_lost = true; }
 
@@ -89,6 +95,8 @@ static bool enter(void)
     }
     FUNCTION_Select(FUNCTION_FOREGROUND); RADIO_SelectVfos(); RADIO_SetupRegisters(true);
     usb_lost=false;
+    gRequestDisplayScreen=DISPLAY_INVALID;
+    GUI_SelectNextDisplay(DISPLAY_L4S);
     gUpdateDisplay=true; gUpdateStatus=true;
     return true;
 }
@@ -102,6 +110,8 @@ static void leave(void)
     gEeprom.CW_KEY_WPM=saved.wpm; gEeprom.CW_BREAKIN_ENABLE=saved.breakin;
     gCW_CrossMode=saved.cross_mode;
     RADIO_SelectVfos(); RADIO_SetupRegisters(true); gMonitor=saved.monitor;
+    gRequestDisplayScreen=DISPLAY_INVALID;
+    GUI_SelectNextDisplay(DISPLAY_MAIN);
     gScanStateDir=saved.scan;
     gUpdateDisplay=true; gUpdateStatus=true;
 }
@@ -164,7 +174,7 @@ static bool tone(uint16_t tenths)
 
 static bool ptt_on(void)
 {
-    if (!can_retune() || release_latch || gEeprom.KEY_LOCK ||
+    if (!can_retune() || release_latch || gEeprom.KEY_LOCK || (!local_ptt_request && GPIO_IsPttPressed()) ||
         (gTxVfo->BUSY_CHANNEL_LOCK && (g_SquelchLost || gCurrentFunction==FUNCTION_RECEIVE))) return false;
     gPttIsPressed=true; RADIO_PrepareTX();
     if (gCurrentFunction!=FUNCTION_TRANSMIT) { gPttIsPressed=false; return false; }
@@ -173,7 +183,7 @@ static bool ptt_on(void)
 
 static bool cw_start(const uint8_t *text, uint8_t length, uint8_t wpm)
 {
-    if (!can_retune() || release_latch || gEeprom.KEY_LOCK || gBatteryDisplayLevel==0 ||
+    if (!can_retune() || release_latch || GPIO_IsPttPressed() || gEeprom.KEY_LOCK || gBatteryDisplayLevel==0 ||
         gBatteryDisplayLevel>6 || !validate_pair(&state.applied) ||
         (gTxVfo->BUSY_CHANNEL_LOCK && (g_SquelchLost || gCurrentFunction==FUNCTION_RECEIVE))) return false;
     gEeprom.CW_KEY_WPM=wpm;
@@ -194,17 +204,42 @@ void L4S_ControlTick(void)
     if (state.session) {
         const bool timed_out = state.tx_window_open && (uint32_t)(millis()-state.tx_started) >=
             ((uint32_t)gEeprom.TX_TIMEOUT_TIMER+1)*5000u;
-        if (usb_lost || GPIO_IsPttPressed() || timed_out) {
-            L4S_Abort(&state,timed_out ? L4S_TIMEOUT : L4S_CANCELLED); usb_lost=false;
+        if (usb_lost) {
+            L4S_Abort(&state,L4S_CANCELLED); usb_lost=false;
+        } else if (timed_out) {
+            L4S_StopTx(&state,L4S_TIMEOUT);
         }
-    }
+        const bool physical=GPIO_IsPttPressed();
+        if (physical!=ptt_raw) { ptt_raw=physical; ptt_changed_ms=millis(); }
+        if (physical!=ptt_down && (!physical || (uint32_t)(millis()-ptt_changed_ms)>=30u)) {
+            ptt_down=physical;
+            local_ptt_request=physical;
+            const uint8_t result=L4S_LocalPtt(&state,physical,millis());
+            local_ptt_request=false;
+            if (physical && result!=L4S_APPLIED) release_latch=true;
+        }
+    } else ptt_down=ptt_raw=GPIO_IsPttPressed();
     L4S_Tick(&state,millis());
+    if (state.session && (uint32_t)(millis()-last_display_ms)>=250u) {
+        last_display_ms=millis(); gUpdateDisplay=true; gUpdateStatus=true;
+    }
 }
 
 bool L4S_LocalKey(bool pressed)
 {
+    if (key_release_latch) {
+        if (!pressed) key_release_latch=false;
+        return true;
+    }
     if (!pressed || !L4S_Active()) return false;
+    key_release_latch=true;
     L4S_Abort(&state,L4S_CANCELLED); return true;
+}
+
+void L4S_ProcessKeys(KEY_Code_t key, bool pressed, bool held)
+{
+    (void)key; (void)held;
+    if (!L4S_LocalKey(pressed) && !L4S_Active()) GUI_SelectNextDisplay(DISPLAY_MAIN);
 }
 
 bool L4S_HandleUart(uint32_t port, const uint8_t *body, size_t size)

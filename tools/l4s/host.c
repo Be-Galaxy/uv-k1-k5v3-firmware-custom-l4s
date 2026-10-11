@@ -7,6 +7,7 @@
 #define EXPORT
 #endif
 static L4S_State state;
+const L4S_State *L4S_GetState(void) { return &state; }
 static uint8_t tx, progress;
 static bool active, denied;
 static uint32_t clock_ms, cw_start_ms;
@@ -55,4 +56,5 @@ EXPORT void Host_LocalStop(void) { L4S_Abort(&state,L4S_CANCELLED); }
 EXPORT unsigned Host_Starts(void) { return starts; }
 EXPORT unsigned Host_Writes(void) { return writes; }
 EXPORT unsigned Host_Leaves(void) { return leaves; }
+EXPORT uint8_t Host_LocalPtt(uint8_t pressed,uint32_t now) { return L4S_LocalPtt(&state,pressed!=0,now); }
 EXPORT size_t Host_Encode(const uint8_t *body,size_t n,uint8_t *out) { return L4S_EncodeFrame(body,n,out); }

@@ -124,6 +124,9 @@ void (*const ProcessKeysFunctions[])(KEY_Code_t Key, bool bKeyPressed, bool bKey
     [DISPLAY_MAIN] = &MAIN_ProcessKeys,
     [DISPLAY_MENU] = &MENU_ProcessKeys,
     [DISPLAY_SCANNER] = &SCANNER_ProcessKeys,
+#ifdef ENABLE_L4S_CONTROL
+    [DISPLAY_L4S] = &L4S_ProcessKeys,
+#endif
 
 #ifdef ENABLE_CODE_PRACTICE
 	[DISPLAY_CPO] = &CPO_ProcessKeys,

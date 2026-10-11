@@ -48,10 +48,31 @@ void L4S_Abort(L4S_State *s, uint8_t reason)
 {
     if (!s->session) return;
     stop(s, reason);
-    s->ops->leave();
     s->retired_session = s->session;
     s->session = 0;
     s->pair_ready = s->mode_ready = false;
+    s->ops->leave();
+}
+
+void L4S_StopTx(L4S_State *s, uint8_t reason) { stop(s,reason); }
+
+uint8_t L4S_LocalPtt(L4S_State *s, bool pressed, uint32_t now)
+{
+    if (!s->session) return L4S_BAD_SESSION;
+    if (!pressed) {
+        if (s->owner==L4S_TX_LOCAL) stop(s,0);
+        return L4S_APPLIED;
+    }
+    if (s->owner==L4S_TX_LOCAL) return L4S_APPLIED;
+    /* A physical press cancels an existing remote operation, but never rekeys on the same press. */
+    if (s->tx_window_open || s->owner || s->ops->tx_state()) {
+        stop(s,L4S_CANCELLED); return L4S_CANCELLED;
+    }
+    if (!s->pair_ready || !s->mode_ready || !s->applied.tx_enabled) return s->error=L4S_NOT_READY;
+    if (!s->ops->ptt_on()) return s->error=L4S_TX_REJECTED;
+    s->owner=L4S_TX_LOCAL; s->tx_window_open=true; s->tx_started=now; s->error=0;
+    s->cw_state=L4S_CW_IDLE; s->cw_length=0;
+    return L4S_APPLIED;
 }
 
 void L4S_Tick(L4S_State *s, uint32_t now)
@@ -64,7 +85,7 @@ void L4S_Tick(L4S_State *s, uint32_t now)
         } else if (!s->ops->cw_active()) {
             s->ops->stop(); s->owner = L4S_TX_OFF; s->cw_state = L4S_CW_DONE;
         } else s->cw_state = L4S_CW_SENDING;
-    } else if (s->owner == L4S_TX_VOICE && s->ops->tx_state() == L4S_TX_OFF) {
+    } else if ((s->owner == L4S_TX_VOICE || s->owner == L4S_TX_LOCAL) && s->ops->tx_state() == L4S_TX_OFF) {
         stop(s, L4S_TX_REJECTED);
     }
 }
@@ -76,6 +97,7 @@ static size_t snapshot(L4S_State *s, uint8_t *p)
     L4S_Write32(p+12, 0); /* Reserved; frequency changes are never queued during TX. */
     p[16] = s->rx_mode; p[17] = s->tx_mode; p[18] = s->applied.tx_enabled;
     p[19] = s->ops->tx_state();
+    if (s->owner==L4S_TX_LOCAL) p[19]=L4S_TX_LOCAL;
     if (!p[19] && s->tx_window_open) p[19]=L4S_TX_CW;
     p[20] = s->cw_state;
     p[21] = s->cw_state == L4S_CW_DONE ? s->cw_length : s->ops->cw_progress();
@@ -107,6 +129,7 @@ static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
         if (!s->ops->validate_pair(&pair)) return L4S_RANGE;
         if (!s->ops->apply_pair(&pair)) return L4S_TX_REJECTED;
         s->applied = pair; s->pair_ready = true;
+        s->error=0;
         return L4S_APPLIED;
     }
     case L4S_MODE:

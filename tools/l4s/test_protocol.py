@@ -4,6 +4,40 @@ from protocol import *
 from simulator import Firmware
 
 class ProtocolTest(unittest.TestCase):
+    def test_physical_ptt_keeps_session_and_holds_both_frequencies(self):
+        self.ready()
+        self.assertEqual(0,self.fw.lib.Host_LocalPtt(1,self.now))
+        reply=self.send(STATUS)
+        self.assertEqual(self.session,struct.unpack_from('<I',reply,8)[0])
+        self.assertEqual(3,reply[31])
+        self.assertEqual(4,self.pair(2,rx=435110000)[5])
+        self.assertEqual(0,self.fw.lib.Host_LocalPtt(0,self.now))
+        self.assertEqual(self.session,struct.unpack_from('<I',self.send(KEEPALIVE),8)[0])
+        self.assertEqual(0,self.pair(2,rx=435110000)[5])
+
+    def test_local_ptt_requires_ready_pair_and_obeys_tx_rejection(self):
+        self.assertEqual(10,self.fw.lib.Host_LocalPtt(1,self.now))
+        self.ready();self.fw.lib.Host_Deny(1)
+        self.assertEqual(7,self.fw.lib.Host_LocalPtt(1,self.now))
+        self.assertEqual(0,self.fw.lib.Host_Starts())
+
+    def test_local_press_cancels_remote_cw_without_rekey_or_disconnect(self):
+        self.ready(cw=True)
+        self.send(CW,b'\24\4TEST')
+        starts=self.fw.lib.Host_Starts()
+        self.assertEqual(8,self.fw.lib.Host_LocalPtt(1,self.now))
+        self.assertEqual(starts,self.fw.lib.Host_Starts())
+        status=self.send(STATUS)
+        self.assertEqual(self.session,struct.unpack_from('<I',status,8)[0])
+        self.assertEqual(0,status[31])
+
+    def test_watchdog_still_stops_local_ptt(self):
+        self.ready();self.fw.lib.Host_LocalPtt(1,self.now)
+        self.fw.lib.Host_Tick(self.now+1500)
+        reply=self.send(STATUS)
+        self.assertEqual(0,struct.unpack_from('<I',reply,8)[0])
+        self.assertEqual(0,reply[31])
+
     def setUp(self):
         self.fw = Firmware()
         self.seq = 1
