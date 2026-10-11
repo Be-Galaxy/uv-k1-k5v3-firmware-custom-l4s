@@ -187,7 +187,6 @@ enable_feature(ENABLE_FEAT_NR7Y_CW
 enable_feature(ENABLE_FEAT_NR7Y_CPO
     app/cpo.c
     app/cpocall.c
-    app/cpoqth.c
     ui/cpo.c
 )
 # Millis support

@@ -14,18 +14,15 @@
  *     limitations under the License.
  */
 
-// Callsign drill for code practice. F cycles off -> send -> copy -> copy QTH:
+// Callsign drill for code practice. F cycles off -> send -> copy:
 //   send: a random callsign is shown and the operator keys it
 //   copy: the callsign is played on the sidetone and the operator keys back what
 //         they heard; a hit is answered with "dit dit", a miss replays the call,
 //         and the third miss on one call reveals it and moves on. Sending part
 //         of the call then ? (W1?) asks for a repeat and notes the part on screen.
-//   copy QTH: copy, drilling US state, Canadian province and country codes
-//         (app/cpoqth.c) in place of callsigns; what the code stands for is
-//         named once it is shown
 // Every character is scored as it is decoded.
 //
-// The copy modes can play with Farnsworth spacing: characters at the keyer speed,
+// Copy mode can play with Farnsworth spacing: characters at the keyer speed,
 // with the gaps between them stretched to a slower effective speed (8 widens, 2
 // narrows). Auto spacing (0) narrows the gaps a step after a run of calls copied on
 // the first listen and widens them a step when a call has to be revealed.
@@ -44,7 +41,6 @@ typedef enum {
 	CPO_CALL_MODE_OFF = 0,
 	CPO_CALL_MODE_SEND,
 	CPO_CALL_MODE_COPY,
-	CPO_CALL_MODE_COPY_QTH,
 } CPO_CallMode_t;
 
 typedef enum {
@@ -56,7 +52,7 @@ typedef enum {
 // Switch mode; resets the score and starts on a new callsign
 void CPO_Call_SetMode(CPO_CallMode_t mode);
 
-// F key: off -> send -> copy -> copy QTH -> off
+// F key: off -> send -> copy -> off
 void CPO_Call_NextMode(void);
 
 // 5 key: clear the line and restart the current callsign unscored (replayed in copy)
@@ -70,11 +66,11 @@ bool CPO_Call_IsCopyMode(void);
 // speed passes it again.
 uint8_t CPO_Call_EffectiveWPM(void);
 
-// 2 and 8 keys, copy modes only: effective speed one step up (narrower gaps) or
+// 2 and 8 keys, copy mode only: effective speed one step up (narrower gaps) or
 // down (wider). Stepping up to the keyer speed turns the spacing off.
 void CPO_Call_StepSpacing(bool narrower);
 
-// 0 key, copy modes only: auto spacing on/off
+// 0 key, copy mode only: auto spacing on/off
 void CPO_Call_ToggleAutoSpacing(void);
 
 // The line shown for a moment after the spacing changes, e.g. "Spacing 12 WPM";
@@ -91,10 +87,6 @@ void CPO_Call_Tick10ms(void);
 // Text for the callsign line: the call in send mode or once copied/revealed,
 // otherwise the notes so far, e.g. "W1A?" (just "?" with none)
 void CPO_Call_GetCallLine(char out[CPO_CALL_LINE_SIZE]);
-
-// Copy QTH: the state or country the code stands for once the code is shown,
-// otherwise NULL
-const char *CPO_Call_GetName(void);
 
 extern CPO_CallMode_t gCW_CpoCallMode;
 extern char gCW_CpoCall[CPO_CALL_MAX_LEN + 1];
