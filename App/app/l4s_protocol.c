@@ -34,6 +34,7 @@ void L4S_Init(L4S_State *s, const L4S_Ops *ops)
     memset(s, 0, sizeof(*s)); s->ops = ops;
     L4S_DefaultConfig(&s->settings);
     s->step_hz=250;
+    s->correction_step_hz=10;
 }
 
 static void stop(L4S_State *s, uint8_t error)
@@ -67,7 +68,7 @@ uint8_t L4S_LocalPtt(L4S_State *s, bool pressed, uint32_t now)
         if (s->owner==L4S_TX_LOCAL) stop(s,0);
         return L4S_APPLIED;
     }
-    if (s->menu_open) return L4S_BUSY;
+    if (s->menu_open || s->store_busy) return L4S_BUSY;
     if (s->owner==L4S_TX_LOCAL) return L4S_APPLIED;
     /* A physical press cancels an existing remote operation, but never rekeys on the same press. */
     if (s->tx_window_open || s->owner || s->ops->tx_state()) {
@@ -115,11 +116,16 @@ static size_t snapshot(L4S_State *s, uint8_t *p)
 static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
 {
     switch (cmd) {
+    case L4S_PROFILE_STORE: {
+        uint8_t result=s->ops->store ? s->ops->store(p,n) : L4S_UNSUPPORTED;
+        if(result==L4S_APPLIED && n && p[0]==7)s->pair_ready=false;
+        return result;
+    }
     case L4S_PROFILE: {
         if(!n || (p[0]==0 && n!=49) || (p[0]==1 && n!=15) || (p[0]==2 && n!=1)) return L4S_BAD_LENGTH;
         if(p[0]>2) return L4S_UNSUPPORTED;
         if(p[0]==2) return L4S_APPLIED;
-        if(s->menu_open || s->tx_window_open || s->owner || s->ops->tx_state() || !s->ops->can_retune()) return L4S_BUSY;
+        if(s->menu_open || s->store_busy || s->tx_window_open || s->owner || s->ops->tx_state() || !s->ops->can_retune()) return L4S_BUSY;
         if(p[0]==0) {
             for(unsigned i=33;i<49;i++) if(p[i] && (p[i]<' ' || p[i]>'~')) return L4S_RANGE;
             if(!s->ops->profile) return L4S_UNSUPPORTED;
@@ -159,7 +165,7 @@ static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
     case L4S_PAIR: {
         if (n != 13 || p[8] > 1) return L4S_BAD_LENGTH;
         /* Hold BOTH legs throughout voice TX and the complete CW message, including gaps. */
-        if (s->tx_window_open || s->owner || s->ops->tx_state() || !s->ops->can_retune()) return L4S_BUSY;
+        if (s->store_busy || s->tx_window_open || s->owner || s->ops->tx_state() || !s->ops->can_retune()) return L4S_BUSY;
         L4S_Pair pair = {L4S_Read32(p), L4S_Read32(p+4), L4S_Read32(p+9), p[8] != 0};
         if (pair.rx_hz > UINT32_MAX - 5 || pair.tx_hz > UINT32_MAX - 5) return L4S_RANGE;
         pair.rx_hz = (pair.rx_hz + 5) / 10 * 10;
@@ -174,7 +180,7 @@ static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
     }
     case L4S_MODE:
         if (n != 3) return L4S_BAD_LENGTH;
-        if (s->tx_window_open || s->owner || s->ops->tx_state()) return L4S_BUSY;
+        if (s->store_busy || s->tx_window_open || s->owner || s->ops->tx_state()) return L4S_BUSY;
         if (p[0] > L4S_CW_MODE || (p[1] != L4S_FM && p[1] != L4S_CW_MODE) || p[2] > 2) return L4S_UNSUPPORTED;
         if (!s->ops->mode(p[0],p[1],p[2])) return L4S_TX_REJECTED;
         s->rx_mode=p[0]; s->tx_mode=p[1]; s->narrow=p[2]; s->mode_ready=true;
@@ -183,14 +189,14 @@ static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
         return L4S_APPLIED;
     case L4S_TONE:
         if (n != 2) return L4S_BAD_LENGTH;
-        if (s->tx_window_open || s->owner || s->ops->tx_state()) return L4S_BUSY;
+        if (s->store_busy || s->tx_window_open || s->owner || s->ops->tx_state()) return L4S_BUSY;
         if (!s->ops->tone(L4S_Read16(p))) return L4S_RANGE;
         if (s->tx_mode==L4S_FM) s->settings.tx_tone=L4S_CtcssChoice(L4S_Read16(p));
         return L4S_APPLIED;
     case L4S_PTT:
         if (n != 5 || p[0] > 1) return L4S_BAD_LENGTH;
         if (!p[0]) { stop(s, 0); return L4S_APPLIED; }
-        if (s->menu_open) return L4S_BUSY;
+        if (s->menu_open || s->store_busy) return L4S_BUSY;
         if (s->tx_window_open || s->owner || s->ops->tx_state()) return L4S_BUSY;
         if (!s->pair_ready || !s->mode_ready || !s->applied.tx_enabled ||
             L4S_Read32(p+1) != s->applied.revision) return L4S_NOT_READY;
@@ -199,7 +205,7 @@ static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
         s->owner = L4S_TX_VOICE; return L4S_APPLIED;
     case L4S_CW:
         if (n < 3 || p[1] == 0 || p[1] > L4S_MAX_TEXT || n != (size_t)p[1] + 2) return L4S_BAD_LENGTH;
-        if (s->menu_open) return L4S_BUSY;
+        if (s->menu_open || s->store_busy) return L4S_BUSY;
         if (s->owner || s->ops->tx_state()) return L4S_BUSY;
         if (!s->pair_ready || !s->mode_ready || !s->applied.tx_enabled) return L4S_NOT_READY;
         if (s->tx_mode != L4S_CW_MODE) return L4S_UNSUPPORTED;
@@ -216,7 +222,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
     if (length < 12 || length > L4S_MAX_BODY || L4S_Read16(body+2) != length - 4) return 0;
     const uint16_t cmd=L4S_Read16(body), seq=L4S_Read16(body+6);
     const uint32_t session=L4S_Read32(body+8);
-    if (cmd < L4S_HELLO || cmd > L4S_PROFILE) return 0;
+    if (cmd < L4S_HELLO || cmd > L4S_PROFILE_STORE) return 0;
     L4S_Tick(s, now);
     uint8_t result=L4S_APPLIED;
     if (body[4] != L4S_VERSION || body[5] != 0) result=L4S_UNSUPPORTED;
@@ -255,7 +261,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
     if (cmd == L4S_HELLO && result == L4S_APPLIED) {
         uint8_t *p=out+12;
         memcpy(p,"L4S1",4); p[4]=3; /* UV-K1 / UV-K5 V3 shared firmware */
-        uint32_t features=L4S_CAP_PAIR|L4S_CAP_PTT|L4S_CAP_CW|L4S_CAP_TONE|L4S_CAP_CONTEXT|L4S_CAP_SETTINGS|L4S_CAP_PROFILES;
+        uint32_t features=L4S_CAP_PAIR|L4S_CAP_PTT|L4S_CAP_CW|L4S_CAP_TONE|L4S_CAP_CONTEXT|L4S_CAP_SETTINGS|L4S_CAP_PROFILES|L4S_CAP_STORE;
         L4S_Write32(p+5,features);
         L4S_Write16(p+9,10); p[11]=L4S_MAX_TEXT; p[12]=10; p[13]=45;
         L4S_Write16(p+14,L4S_TIMEOUT_MS);
@@ -268,6 +274,8 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
 #endif
         p[40]=0x0f; p[41]=0x09; /* RX FM/AM/USB/CW; TX FM/CW only. */
         data_size=42;
+    } else if(cmd==L4S_PROFILE_STORE && result<=L4S_ACCEPTED && s->ops->store_reply) {
+        data_size=s->ops->store_reply(body+12,out+12);
     } else {
         data_size=snapshot(s,out+12);
         if ((cmd==L4S_SETTINGS || cmd==L4S_PROFILE) && result==L4S_APPLIED) {
@@ -276,7 +284,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
             L4S_Write16(p+8,s->tx_mode==L4S_FM ? L4S_CtcssValue(s->arm_active ? s->settings.arm_tone : s->settings.tx_tone) : 0);
             L4S_Write16(p+10,s->rx_mode==L4S_FM ? L4S_CtcssValue(s->settings.rx_tone) : 0);
             L4S_Write16(p+12,L4S_CtcssValue(s->settings.arm_tone));
-            p[14]=(s->menu_open ? 1 : 0)|(s->arm_next ? 2 : 0)|(s->arm_active ? 4 : 0)|
+            p[14]=(s->menu_open || s->store_busy ? 1 : 0)|(s->arm_next ? 2 : 0)|(s->arm_active ? 4 : 0)|
                 (s->user_modified ? 8 : 0)|(s->saved_settings_valid ? 16 : 0);
             memcpy(p+15,s->saved_key,16);
             data_size+=31;

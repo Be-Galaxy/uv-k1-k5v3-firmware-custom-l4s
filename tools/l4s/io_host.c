@@ -16,6 +16,7 @@ static unsigned submits,profile_writes;
 static bool eager,corrupt;
 static uint8_t record[L4S_PROFILE_SIZE];
 static uint8_t satellite_records[L4S_SAT_PROFILE_COUNT*L4S_SAT_PROFILE_SIZE];
+void Host_StoreReset(void);
 static int submit(const uint8_t *data,size_t size) {
     (void)data;(void)size;submits++;
     if(eager) L4S_ReplyComplete(&writer);
@@ -33,7 +34,7 @@ void Host_StorageWrite(uint32_t address,const void *data,unsigned size) {
         if(corrupt)satellite_records[address-L4S_SAT_PROFILE_ADDR+7]^=1;
     }
 }
-EXPORT void Host_IoReset(void) {memset(&writer,0,sizeof(writer));memset(record,0xff,sizeof(record));memset(satellite_records,0xff,sizeof(satellite_records));submit_result=0;submits=profile_writes=0;eager=corrupt=false;}
+EXPORT void Host_IoReset(void) {memset(&writer,0,sizeof(writer));memset(record,0xff,sizeof(record));memset(satellite_records,0xff,sizeof(satellite_records));submit_result=0;submits=profile_writes=0;eager=corrupt=false;Host_StoreReset();}
 EXPORT bool Host_Send(const uint8_t *data,size_t size,bool dtr) {return L4S_SendReply(&writer,dtr,data,size,submit);}
 EXPORT void Host_SendResult(int result,bool immediate) {submit_result=result;eager=immediate;}
 EXPORT void Host_ReplyDone(void) {L4S_ReplyComplete(&writer);}

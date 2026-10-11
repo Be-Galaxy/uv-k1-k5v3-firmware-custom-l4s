@@ -21,9 +21,11 @@ typedef struct {
     bool open, editing, arm_next;
     uint8_t index, error;
     uint16_t step_hz;
+    uint16_t correction_step_hz;
 } L4S_MenuState;
 void L4S_DefaultConfig(L4S_UserConfig *config);
 bool L4S_ValidConfig(const L4S_UserConfig *config);
+bool L4S_ConfigEqual(const L4S_UserConfig *,const L4S_UserConfig *);
 void L4S_EncodeProfile(const L4S_UserConfig *config, uint8_t out[L4S_PROFILE_SIZE]);
 bool L4S_DecodeProfile(const uint8_t data[L4S_PROFILE_SIZE], L4S_UserConfig *config);
 void L4S_SetProfileKey(const uint8_t key[16]);
@@ -32,6 +34,8 @@ bool L4S_SaveProfile(const L4S_UserConfig *config, void (*read)(uint32_t,void *,
                      void (*write)(uint32_t,const void *,unsigned));
 bool L4S_LoadSatelliteProfile(const uint8_t key[16], L4S_UserConfig *config,
                             void (*read)(uint32_t,void *,unsigned));
+bool L4S_DecodeSatelliteRecord(const uint8_t data[64],L4S_UserConfig *config);
+void L4S_EncodeSatelliteRecord(const uint8_t key[16],const char *name,const L4S_UserConfig *config,uint8_t out[64]);
 /* 0 saved, 12 storage/verification error, 13 full; never evicts another satellite. */
 uint8_t L4S_SaveSatelliteProfile(const uint8_t key[16], const char *name, const L4S_UserConfig *config,
     void (*read)(uint32_t,void *,unsigned), void (*write)(uint32_t,const void *,unsigned));

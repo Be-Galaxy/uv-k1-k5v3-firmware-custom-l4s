@@ -27,6 +27,10 @@ void L4S_EncodeProfile(const L4S_UserConfig *c,uint8_t out[L4S_PROFILE_SIZE])
     out[29]=c->squelch;
     L4S_Write16(out+30,L4S_Crc(out,30));
 }
+bool L4S_ConfigEqual(const L4S_UserConfig *a,const L4S_UserConfig *b) {
+    return !memcmp(a,b,9) && a->rx_base_hz==b->rx_base_hz && a->tx_base_hz==b->tx_base_hz &&
+        a->rx_correction_hz==b->rx_correction_hz && a->tx_correction_hz==b->tx_correction_hz;
+}
 bool L4S_DecodeProfile(const uint8_t data[L4S_PROFILE_SIZE],L4S_UserConfig *c)
 {
     L4S_UserConfig candidate={0};
@@ -57,9 +61,9 @@ static bool blank_record(const uint8_t *data,unsigned size)
     for(unsigned i=0;i<size;i++) if(data[i]!=0xff) return false;
     return true;
 }
-static bool decode_satellite(const uint8_t data[L4S_SAT_PROFILE_SIZE],L4S_UserConfig *config)
+bool L4S_DecodeSatelliteRecord(const uint8_t data[L4S_SAT_PROFILE_SIZE],L4S_UserConfig *config)
 {
-    if(memcmp(data,"L4SM",4) || data[4]!=1 || data[62] || data[63] ||
+    if(memcmp(data,"L4SM",4) || data[4]!=1 || data[46] || data[47] || data[62] || data[63] ||
         L4S_Read16(data+60)!=L4S_Crc(data,60)) return false;
     L4S_UserConfig c={0};memcpy(&c,data+5,9);
     c.rx_base_hz=L4S_Read32(data+30);c.tx_base_hz=L4S_Read32(data+34);
@@ -72,7 +76,7 @@ bool L4S_LoadSatelliteProfile(const uint8_t key[16],L4S_UserConfig *config,void 
     uint8_t record[L4S_SAT_PROFILE_SIZE];
     for(unsigned i=0;i<L4S_SAT_PROFILE_COUNT;i++) {
         read(L4S_SAT_PROFILE_ADDR+i*sizeof(record),record,sizeof(record));
-        if(!memcmp(record+14,key,16) && decode_satellite(record,config)) return true;
+        if(!memcmp(record+14,key,16) && L4S_DecodeSatelliteRecord(record,config)) return true;
     }
     return false;
 }
@@ -92,15 +96,18 @@ uint8_t L4S_SaveSatelliteProfile(const uint8_t key[16],const char *name,const L4
     }
     if(target<0) target=available;
     if(target<0) return 13;
-    memcpy(record,"L4SM",4);record[4]=1;memcpy(record+5,c,9);memcpy(record+14,key,16);
-    L4S_Write32(record+30,c->rx_base_hz);L4S_Write32(record+34,c->tx_base_hz);
-    L4S_Write32(record+38,(uint32_t)c->rx_correction_hz);L4S_Write32(record+42,(uint32_t)c->tx_correction_hz);
-    strncpy((char *)record+48,name,12);L4S_Write16(record+60,L4S_Crc(record,60));
+    L4S_EncodeSatelliteRecord(key,name,c,record);
     const uint32_t address=L4S_SAT_PROFILE_ADDR+(unsigned)target*sizeof(record);
     read(address,old,sizeof(old));
     if(memcmp(old,record,sizeof(old))) write(address,record,sizeof(record));
     read(address,verify,sizeof(verify));
     return memcmp(record,verify,sizeof(record)) ? 12 : 0;
+}
+void L4S_EncodeSatelliteRecord(const uint8_t key[16],const char *name,const L4S_UserConfig *c,uint8_t record[64]) {
+    memset(record,0,64);memcpy(record,"L4SM",4);record[4]=1;memcpy(record+5,c,9);memcpy(record+14,key,16);
+    L4S_Write32(record+30,c->rx_base_hz);L4S_Write32(record+34,c->tx_base_hz);
+    L4S_Write32(record+38,(uint32_t)c->rx_correction_hz);L4S_Write32(record+42,(uint32_t)c->tx_correction_hz);
+    strncpy((char *)record+48,name,12);L4S_Write16(record+60,L4S_Crc(record,60));
 }
 uint8_t L4S_CtcssChoice(uint16_t tenths)
 {
@@ -126,6 +133,9 @@ bool L4S_MenuKey(L4S_MenuState *m,KEY_Code_t key,bool busy)
     if (key==KEY_MENU) {
         if (busy) {m->error=4;return false;}
         if (m->index==L4S_MENU_SAVE) return true;
+        if((m->index==10 && !m->draft.rx_base_hz) || (m->index==11 && !m->draft.tx_base_hz)) {
+            m->error=m->index==11 && m->draft.rx_base_hz ? 15 : 14;return false;
+        }
         m->editing=!m->editing;return false;
     }
     if (key!=KEY_UP && key!=KEY_DOWN) return false;
@@ -151,7 +161,7 @@ bool L4S_MenuKey(L4S_MenuState *m,KEY_Code_t key,bool busy)
         }
         case 12:case 13: {
             int32_t *correction=m->index==12 ? &m->draft.rx_correction_hz : &m->draft.tx_correction_hz;
-            const int32_t next=*correction+direction*(int32_t)(m->step_hz ? m->step_hz : 250);
+            const int32_t next=*correction+direction*(int32_t)(m->correction_step_hz ? m->correction_step_hz : 10);
             if(next>=-100000 && next<=100000) *correction=next;
             break;
         }
@@ -176,6 +186,7 @@ void L4S_MenuValue(const L4S_MenuState *m,unsigned item,char *text,unsigned size
         case 9:snprintf_(text,size,"SQUELCH %u%s",m->draft.squelch,m->draft.squelch ? "" : " OFF");break;
         case 10:case 11: {
             uint32_t hz=item==10 ? m->draft.rx_base_hz : m->draft.tx_base_hz;
+            if(!hz){snprintf_(text,size,"%s",item==11 && m->draft.rx_base_hz ? "TX B DISABLED" : item==10 ? "RX B WAIT PHONE" : "TX B WAIT PHONE");break;}
             snprintf_(text,size,"%s B %lu.%05lu",item==10 ? "RX" : "TX",(unsigned long)(hz/1000000u),(unsigned long)(hz%1000000u/10u));break;
         }
         case 12:case 13:snprintf_(text,size,"%s CORR %+ld",item==12 ? "RX" : "TX",(long)(item==12 ? m->draft.rx_correction_hz : m->draft.tx_correction_hz));break;

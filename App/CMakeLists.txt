@@ -105,7 +105,7 @@ if(ENABLE_L4S_CONTROL)
         message(FATAL_ERROR "L4S control requires USB CDC and the NR7Y CW engine")
     endif()
     target_compile_definitions(App INTERFACE ENABLE_L4S_CONTROL)
-    target_sources(App INTERFACE app/l4s_control.c app/l4s_protocol.c app/l4s_io.c app/l4s_settings.c ui/l4s.c)
+    target_sources(App INTERFACE app/l4s_control.c app/l4s_protocol.c app/l4s_io.c app/l4s_settings.c app/l4s_store.c ui/l4s.c)
 endif()
 
 if(ENABLE_USB)

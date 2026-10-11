@@ -467,6 +467,23 @@ static void PageProgram(uint32_t Addr, const uint8_t *Buf, uint32_t Size)
     WaitWIP();
 }
 
+#ifdef ENABLE_L4S_CONTROL
+/* Restricted to the reserved profile banks. No WIP waits in the control main loop. */
+bool PY25Q16_ProfileBusy(void) {return (ReadStatusReg(0)&1)!=0;}
+bool PY25Q16_ProfileEraseStart(uint32_t address) {
+    if((address!=0x012000u && address!=0x013000u) || PY25Q16_ProfileBusy())return false;
+    if(SectorCacheAddr==address)SectorCacheAddr=0x1000000u;
+    WriteEnable();CS_Assert();SPI_WriteByte(0x20);WriteAddr(address);CS_Release();return true;
+}
+bool PY25Q16_ProfileProgramStart(uint32_t address,const void *data,unsigned size) {
+    if(address<0x012000u || address+size>0x014000u || !size || size>256 ||
+        address%256+size>256 || PY25Q16_ProfileBusy())return false;
+    if(SectorCacheAddr==address/4096*4096)SectorCacheAddr=0x1000000u;
+    WriteEnable();CS_Assert();SPI_WriteByte(2);WriteAddr(address);
+    const uint8_t *bytes=data;for(unsigned i=0;i<size;i++)SPI_WriteByte(bytes[i]);
+    CS_Release();return true;
+}
+#endif
 void DMA1_Channel4_5_6_7_IRQHandler()
 {
     if (LL_DMA_IsActiveFlag_TC4(DMA1) && LL_DMA_IsEnabledIT_TC(DMA1, CHANNEL_RD))

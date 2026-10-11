@@ -24,5 +24,10 @@ void PY25Q16_Init();
 void PY25Q16_ReadBuffer(uint32_t Address, void *pBuffer, uint32_t Size);
 void PY25Q16_WriteBuffer(uint32_t Address, const void *pBuffer, uint32_t Size, bool Append);
 void PY25Q16_SectorErase(uint32_t Address);
+#ifdef ENABLE_L4S_CONTROL
+bool PY25Q16_ProfileBusy(void);
+bool PY25Q16_ProfileEraseStart(uint32_t address);
+bool PY25Q16_ProfileProgramStart(uint32_t address,const void *data,unsigned size);
+#endif
 
 #endif

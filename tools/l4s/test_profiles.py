@@ -114,7 +114,7 @@ class ProfilesTest(unittest.TestCase):
         for direction in (11,12,11,12):
             self.lib.Host_MenuKey(10);self.lib.Host_MenuKey(direction);self.lib.Host_MenuKey(10);self.lib.Host_MenuKey(12)
         config=Config();self.lib.Host_MenuDraft(ctypes.byref(config))
-        self.assertEqual((435100250,145899750,250,-250),
+        self.assertEqual((435100250,145899750,10,-10),
             (config.rx_base_hz,config.tx_base_hz,config.rx_correction_hz,config.tx_correction_hz))
         self.lib.Host_MenuKey(13)
         self.assertEqual(0,self.send(PROFILE,b'\1'+struct.pack('<IIHI',435100000,145900000,1000,generation))[5])

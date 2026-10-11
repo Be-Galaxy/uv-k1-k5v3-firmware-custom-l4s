@@ -26,6 +26,8 @@ class DisplayTest(unittest.TestCase):
         return [self.fw.lib.Host_DisplayText(i).decode() for i in range(7)]
 
     def test_received_pair_is_rendered_in_rf_hz(self):
+        self.assertIn('WAIT PHONE SYNC',self.render()[6])
+        self.send(MODE,b'\0\0\0')
         self.pair()
         lines=self.render()
         self.assertEqual('RX 435.10001',lines[2])
