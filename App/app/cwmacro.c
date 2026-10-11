@@ -38,7 +38,7 @@
 // Pattern: LSB first, 0=dit, 1=dah
 typedef struct {
 	char ch;
-	uint8_t length;   // Number of elements (1-6)
+	uint8_t length;   // Number of elements (1-7)
 	uint8_t pattern;  // Bit pattern: 0=dit, 1=dah, LSB first
 } MorseCode_t;
 
@@ -91,15 +91,24 @@ static const MorseCode_t MORSE_TABLE[] = {
 	{'-', 6, 0b100001},   // -....-
 	{'+', 5, 0b01010},   // .-.-. AR prosign
 	{'(', 5, 0b01101},   // -.--.  KN prosign
-	{'&', 5, 0b00010}    // .-...  AS prosign
+	{'&', 5, 0b00010},   // .-...  AS prosign
+	// Prosigns with no punctuation of their own
+	{CW_PROSIGN_SK, 6, 0b101000},   // ...-.-
+	{CW_PROSIGN_BK, 7, 0b1010001},  // -...-.-
+	{CW_PROSIGN_KA, 5, 0b10101},    // -.-.-
+	{CW_PROSIGN_SN, 5, 0b01000},    // ...-.
+	{CW_PROSIGN_UR, 6, 0b010100},   // ..-.-.
 };
+
+// Each prosign's letters, in lowercase for the TX display buffer and macro preview
+static const char PROSIGN_LETTERS[][3] = {"sk", "bk", "ka", "sn", "ur"};
 #define MORSE_TABLE_SIZE (sizeof(MORSE_TABLE) / sizeof(MORSE_TABLE[0]))
 
 // Encoder state machine
 static uint8_t s_encoder_pattern = 0;  // Accumulated pattern
 static uint8_t s_encoder_length = 0;   // Number of elements in pattern
 static bool s_encoder_space_pending = false;  // Word space before next char
-static bool s_encoder_overflow = false;  // More than 6 elements sent (invalid char)
+static bool s_encoder_overflow = false;  // More than 7 elements sent (invalid char)
 
 // Recording state
 bool gCW_Recording = false;
@@ -135,6 +144,7 @@ bool CW_ValidateChar(char ch)
 	if (ch == '(') return true;
 	if (ch == '=') return true;
 	if (ch == '?') return true;
+	if (CW_IS_PROSIGN(ch)) return true;
 	return false;
 }
 
@@ -324,9 +334,16 @@ uint8_t CW_FormatMacroDisplay(uint8_t macroIndex, char *display, uint8_t maxChar
 			display[outPos++] = ' ';
 			dispCount++;
 		}
-		// Add character if room
-		if (dispCount < 9) {
-			display[outPos++] = CW_MACRO_GET_CHAR(data[i]);
+		// Add character if room; a prosign takes two places
+		const char ch = CW_MACRO_GET_CHAR(data[i]);
+		if (CW_IS_PROSIGN(ch)) {
+			if (dispCount + 2 > 9)
+				break;
+			display[outPos++] = PROSIGN_LETTERS[ch - CW_PROSIGN_SK][0];
+			display[outPos++] = PROSIGN_LETTERS[ch - CW_PROSIGN_SK][1];
+			dispCount += 2;
+		} else if (dispCount < 9) {
+			display[outPos++] = ch;
 			dispCount++;
 		}
 	}
@@ -340,7 +357,7 @@ uint8_t CW_FormatMacroDisplay(uint8_t macroIndex, char *display, uint8_t maxChar
 // Decode accumulated pattern into a character
 static char CW_DecodePattern(uint8_t pattern, uint8_t length)
 {
-	if (length == 0 || length > 6)
+	if (length == 0 || length > 7)
 		return 0;
 	
 	for (unsigned int i = 0; i < MORSE_TABLE_SIZE; i++) {
@@ -381,8 +398,8 @@ void CW_EncoderProcessElement(CW_ElementType_t element)
 
 	switch (element) {
 	case CW_ELEMENT_DIT:
-		// Add a dit (0) to the pattern
-		if (s_encoder_length < 6) {
+		// Add a dit (0) to the pattern; 7 elements is the longest character (BK)
+		if (s_encoder_length < 7) {
 			// Pattern LSB first, so no shift needed for new bit
 			s_encoder_length++;
 		} else {
@@ -392,7 +409,7 @@ void CW_EncoderProcessElement(CW_ElementType_t element)
 
 	case CW_ELEMENT_DAH:
 		// Add a dah (1) to the pattern
-		if (s_encoder_length < 6) {
+		if (s_encoder_length < 7) {
 			s_encoder_pattern |= (1 << s_encoder_length);
 			s_encoder_length++;
 		} else {
@@ -447,7 +464,7 @@ void CW_EncoderProcessElement(CW_ElementType_t element)
 			}
 #ifdef ENABLE_CODE_PRACTICE
 			else if (gCW_CpoActive) {
-				// An unknown pattern, or a run past 6 elements (a held paddle, the 8-dit
+				// An unknown pattern, or a run past 7 elements (a held paddle, the 8-dit
 				// error signal), is dropped everywhere else. Practice shows it so a
 				// fumble can't pass unseen, and the callsign drill scores it as a miss.
 				CW_AddToTxDisplay(CW_CHAR_UNKNOWN, s_encoder_space_pending);
@@ -519,6 +536,13 @@ void CW_StopRecording(void)
 
 void CW_AddToTxDisplay(char ch, bool hasSpace)
 {
+	if (CW_IS_PROSIGN(ch)) {
+		// its two letters in lowercase, which the CW text printers draw underlined
+		CW_AddToTxDisplay(PROSIGN_LETTERS[ch - CW_PROSIGN_SK][0], hasSpace);
+		CW_AddToTxDisplay(PROSIGN_LETTERS[ch - CW_PROSIGN_SK][1], false);
+		return;
+	}
+
 #if CW_ENCODER_DEBUG
 	char buf[64];
 	sprintf_(buf, "AddToTx: ch='%c' space=%d idx=%d\r\n", ch, hasSpace, gCW_TX_DisplayIndex);

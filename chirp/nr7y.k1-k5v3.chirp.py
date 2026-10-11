@@ -30,6 +30,7 @@
 
 import webbrowser
 import os
+import re
 
 import struct
 import logging
@@ -849,6 +850,13 @@ _NR7Y_CW_MACRO_ADDRS = [0x1C00, 0x1C30, 0x1C60, 0x1C90]
 _NR7Y_CW_MACRO_SIZE = 48       # Block layout: [0]=len|SIG, [1..46]=payload, [47]=checksum
 _NR7Y_CW_MACRO_MAX_LEN = 46   # Payload bytes
 _NR7Y_CW_MACRO_SIG = 0x80     # Signature stored in high bit of length byte
+# Characters a macro holds besides A-Z and 0-9 (cwmacro.c CW_ValidateChar)
+_NR7Y_CW_MACRO_PUNCT = "+,-./=?(&"
+# Prosigns, one byte each in a macro (cwmacro.h CW_PROSIGN_*), written <SK> here
+_NR7Y_CW_PROSIGNS = {0x01: "SK", 0x02: "BK", 0x03: "KA", 0x04: "SN", 0x05: "UR"}
+_NR7Y_CW_PROSIGN_CODES = {name: code for code, name in _NR7Y_CW_PROSIGNS.items()}
+# Longest a full macro can be as text: every byte a word of its own, or a <SK>
+_NR7Y_CW_MACRO_TEXT_MAX = _NR7Y_CW_MACRO_MAX_LEN * 5
 
 # CW key input mode display strings (menu index 0-10 stored directly in EEPROM bits 0-4)
 _NR7Y_CW_KEY_INPUT_MODES = [
@@ -4301,8 +4309,12 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
             try:
                 txt = self._get_cw_msg(i)
                 rs_m = RadioSetting("cw_msg%d" % i, "CW Message %d" % i,
-                                    RadioSettingValueString(0, 46, txt))
-                rs_m.set_doc("CW macro %d (A-Z, 0-9, /, ?, ., ,, -, = only; max 46 chars)" % i)
+                                    RadioSettingValueString(
+                                        0, _NR7Y_CW_MACRO_TEXT_MAX, txt))
+                rs_m.set_doc("CW macro %d: A-Z, 0-9, + , - . / = ? ( & and the "
+                             "prosigns <SK> <BK> <KA> <SN> <UR>; up to 46 "
+                             "characters, not counting spaces, with a prosign "
+                             "counting as one" % i)
                 macros.append(rs_m)
             except Exception as e:
                 LOG.error("CW macro %d: %s", i, e)
@@ -4633,7 +4645,11 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
         for i in range(1, length + 1):
             byte = raw[i]
             has_space = (byte & 0x80) != 0
-            char = chr(byte & 0x7F)
+            code = byte & 0x7F
+            if code in _NR7Y_CW_PROSIGNS:
+                char = "<%s>" % _NR7Y_CW_PROSIGNS[code]
+            else:
+                char = chr(code)
             if has_space and result:   # No leading space
                 result.append(' ')
             result.append(char)
@@ -4654,19 +4670,32 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
             LOG.info("CW macro %d cleared", idx)
             return
 
-        # Encode words, inserting inter-word space flag on first char of each word
+        # Encode words, inserting inter-word space flag on the first char kept
+        # from each word after the first. <SK> and the like are one prosign byte.
         encoded = []
-        for word_idx, word in enumerate(text.upper().split()):
-            for char_idx, char in enumerate(word):
-                if len(encoded) >= _NR7Y_CW_MACRO_MAX_LEN:
-                    break
-                if not ((char >= 'A' and char <= 'Z') or
-                        (char >= '0' and char <= '9') or
-                        char in ('/', '?', ',', '.', '-', '=')):
-                    LOG.debug("CW macro %d: skipping invalid char '%s'", idx, char)
+        dropped = 0
+        for word in text.upper().split():
+            first_in_word = True
+            for token in re.findall(r"<[^<>]*>|.", word):
+                if len(token) > 1:
+                    code = _NR7Y_CW_PROSIGN_CODES.get(token[1:-1])
+                elif ('A' <= token <= 'Z' or '0' <= token <= '9' or
+                      token in _NR7Y_CW_MACRO_PUNCT):
+                    code = ord(token)
+                else:
+                    code = None
+                if code is None:
+                    LOG.debug("CW macro %d: skipping invalid '%s'", idx, token)
                     continue
-                has_space = (word_idx > 0 and char_idx == 0)
-                encoded.append(ord(char) | (0x80 if has_space else 0x00))
+                if len(encoded) >= _NR7Y_CW_MACRO_MAX_LEN:
+                    dropped += 1
+                    continue
+                has_space = first_in_word and bool(encoded)
+                first_in_word = False
+                encoded.append(code | (0x80 if has_space else 0x00))
+        if dropped:
+            LOG.warning("CW macro %d: %d characters past the first %d dropped",
+                        idx, dropped, _NR7Y_CW_MACRO_MAX_LEN)
 
         if not encoded:
             for i in range(_NR7Y_CW_MACRO_SIZE):

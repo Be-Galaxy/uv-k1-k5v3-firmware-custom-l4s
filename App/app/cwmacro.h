@@ -52,6 +52,18 @@
 #define CW_MACRO_HAS_SPACE(byte) (((byte) & 0x80) != 0)
 #define CW_MACRO_GET_CHAR(byte) ((byte) & 0x7F)
 
+// Prosigns that have no punctuation of their own (BT, AR, KN and AS decode as
+// = + ( &). Each is one byte wherever a character goes: the decoder, macros and
+// playback, which sends it run together. In the TX display buffer and the macro
+// preview it becomes its two letters in lowercase, which the CW text printers
+// draw as underlined capitals. CHIRP shows it as <SK>.
+#define CW_PROSIGN_SK  '\x01'  // ...-.-   end of contact
+#define CW_PROSIGN_BK  '\x02'  // -...-.-  break
+#define CW_PROSIGN_KA  '\x03'  // -.-.-    attention (also CT)
+#define CW_PROSIGN_SN  '\x04'  // ...-.    understood (also VE)
+#define CW_PROSIGN_UR  '\x05'  // ..-.-.   U and R run together
+#define CW_IS_PROSIGN(ch) ((ch) >= CW_PROSIGN_SK && (ch) <= CW_PROSIGN_UR)
+
 // Load a macro from EEPROM into buffer
 // Returns actual character count (without considering spaces)
 uint8_t CW_LoadMacro(uint8_t macroIndex, char *buffer, uint8_t bufferSize);
@@ -62,7 +74,7 @@ void CW_SaveMacro(uint8_t macroIndex, const char *buffer, uint8_t length);
 // Get the character count for a macro (reads length byte from EEPROM)
 uint8_t CW_GetMacroLength(uint8_t macroIndex);
 
-// Validate if a character is allowed in CW macros (A-Z, 0-9, '/', '?')
+// Validate if a character is allowed in CW macros (A-Z, 0-9, + , - . / = ? ( & and the prosigns)
 bool CW_ValidateChar(char ch);
 
 // Format macro for display (first N chars)
