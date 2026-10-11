@@ -35,9 +35,10 @@ static L4S_MenuState menu;
 static L4S_UserConfig profile;
 static bool apply_user_config(const L4S_UserConfig *config);
 static void apply_tone(FREQ_Config_t *target, uint8_t choice);
+static void setup_receive(void);
 static struct {
     VFO_Info_t vfo[2];
-    uint8_t tx_vfo, cross, dual, battery_save, key_input, wpm, pitch, volume;
+    uint8_t tx_vfo, cross, dual, battery_save, key_input, wpm, pitch, volume, squelch;
     bool vox, breakin, cross_mode, monitor;
     int8_t scan;
 } saved;
@@ -60,10 +61,8 @@ static void stop_tx(void)
 {
     CW_StopPlayback();
     if (gCW_State != CW_INACTIVE) CW_EndTxNow();
-    else if (gCurrentFunction == FUNCTION_TRANSMIT) {
-        /* Emergency/remote release must not extend TX with Roger/CTCSS tails. */
-        RADIO_SetupRegisters(true);
-    }
+    /* Emergency/remote release must not extend TX with Roger/CTCSS tails. */
+    setup_receive();
     gPttIsPressed = false; gPttOnePushCounter = 0;
     gFlagEndTransmission = false; gRTTECountdown_10ms = 0;
     release_latch = GPIO_IsPttPressed();
@@ -86,6 +85,7 @@ static bool enter(void)
     saved.vox=gEeprom.VOX_SWITCH; saved.key_input=gEeprom.CW_KEY_INPUT;
     saved.wpm=gEeprom.CW_KEY_WPM; saved.breakin=gEeprom.CW_BREAKIN_ENABLE;
     saved.pitch=gEeprom.CW_TONE_FREQUENCY; saved.volume=gEeprom.CW_SIDETONE_LEVEL;
+    saved.squelch=gEeprom.SQUELCH_LEVEL;
     saved.cross_mode=gCW_CrossMode; saved.monitor=gMonitor; saved.scan=gScanStateDir;
     VFO_Info_t original_rx=*gRxVfo, original_tx=*gTxVfo;
     state.applied=(L4S_Pair){original_rx.pRX->Frequency*10, original_tx.pTX->Frequency*10, 0, false};
@@ -132,8 +132,10 @@ static void leave(void)
     gEeprom.VOX_SWITCH=saved.vox; gEeprom.CW_KEY_INPUT=saved.key_input;
     gEeprom.CW_KEY_WPM=saved.wpm; gEeprom.CW_BREAKIN_ENABLE=saved.breakin;
     gEeprom.CW_TONE_FREQUENCY=saved.pitch; gEeprom.CW_SIDETONE_LEVEL=saved.volume;
+    gEeprom.SQUELCH_LEVEL=saved.squelch;
     gCW_CrossMode=saved.cross_mode;
-    RADIO_SelectVfos(); RADIO_SetupRegisters(true); gMonitor=saved.monitor;
+    RADIO_SelectVfos(); gMonitor=saved.monitor; RADIO_SetupRegisters(true);
+    if(saved.monitor) APP_StartListening(FUNCTION_MONITOR);
     gRequestDisplayScreen=DISPLAY_INVALID;
     GUI_SelectNextDisplay(DISPLAY_MAIN);
     gScanStateDir=saved.scan;
@@ -154,6 +156,14 @@ static bool can_retune(void)
     return gCurrentFunction != FUNCTION_TRANSMIT && gCW_State == CW_INACTIVE && !gCW_PlaybackActive;
 }
 
+static void setup_receive(void)
+{
+    /* RADIO_SelectVfos defaults CW/USB to monitor; the explicit session SQL takes precedence. */
+    gMonitor=gEeprom.SQUELCH_LEVEL==0;
+    RADIO_SetupRegisters(true);
+    if(gMonitor) APP_StartListening(FUNCTION_MONITOR);
+}
+
 static bool apply_pair(const L4S_Pair *p)
 {
     if (!can_retune() || !validate_pair(p)) return false;
@@ -164,7 +174,7 @@ static bool apply_pair(const L4S_Pair *p)
         v->Band=FREQUENCY_GetBand(f[i]); v->StepFrequency=1;
         RADIO_ConfigureSquelchAndOutputPower(v);
     }
-    RADIO_SetupRegisters(true); gUpdateDisplay=true;
+    setup_receive(); gUpdateDisplay=true;
     return true;
 }
 
@@ -182,7 +192,7 @@ static bool set_mode(uint8_t rx, uint8_t tx, uint8_t narrow)
     apply_tone(&gRxVfo->freq_config_RX,rx==L4S_FM ? state.settings.rx_tone : 0);
     apply_tone(&gTxVfo->freq_config_TX,tx==L4S_FM ? state.settings.tx_tone : 0);
     state.settings.mode=tx==L4S_FM ? (narrow ? 3 : 0) : rx==L4S_USB ? 2 : 1;
-    RADIO_SelectVfos(); RADIO_SetupRegisters(true);
+    RADIO_SelectVfos(); setup_receive();
     gUpdateDisplay=true; return true;
 }
 
@@ -201,10 +211,11 @@ static bool apply_user_config(const L4S_UserConfig *c)
     if(fm) gRxVfo->CHANNEL_BANDWIDTH=gTxVfo->CHANNEL_BANDWIDTH=c->mode==3 ? BANDWIDTH_NARROW : BANDWIDTH_WIDE;
     gTxVfo->OUTPUT_POWER=c->power;
     gEeprom.CW_KEY_WPM=c->wpm;gEeprom.CW_TONE_FREQUENCY=c->pitch;gEeprom.CW_SIDETONE_LEVEL=c->volume;
+    gEeprom.SQUELCH_LEVEL=c->squelch;
     apply_tone(&gTxVfo->freq_config_TX,fm ? c->tx_tone : 0);
     apply_tone(&gRxVfo->freq_config_RX,fm ? c->rx_tone : 0);
-    RADIO_ConfigureSquelchAndOutputPower(gTxVfo);
-    RADIO_SelectVfos();RADIO_SetupRegisters(true);
+    for(unsigned i=0;i<2;i++) RADIO_ConfigureSquelchAndOutputPower(&gEeprom.VfoInfo[i]);
+    RADIO_SelectVfos();setup_receive();
     return true;
 }
 

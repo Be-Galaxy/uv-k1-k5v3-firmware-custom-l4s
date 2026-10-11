@@ -10,7 +10,8 @@ static void display_menu(const L4S_State *s,const L4S_MenuState *menu)
 {
     char text[24],value[22];
     UI_PrintStringSmallNormal("L4S MENU",0,127,0);
-    const unsigned first=menu->index/5*5;
+    const unsigned page=menu->index/5*5;
+    const unsigned first=page>L4S_MENU_ITEMS-5 ? L4S_MENU_ITEMS-5 : page;
     for(unsigned row=1;row<=5;row++) {
         const unsigned item=first+row-1;
         L4S_MenuValue(menu,item,value,sizeof(value));
@@ -37,8 +38,8 @@ void UI_DisplayL4s(void)
     UI_PrintStringSmallNormal(text,0,0,0);
     UI_PrintStringSmallNormal(mode,112,0,0);
     if (s->context_valid)
-        snprintf_(text,sizeof(text),"Az:%03u El:%+03d",s->azimuth_tenths/10,s->elevation_tenths/10);
-    else snprintf_(text,sizeof(text),"Az:--- El:---");
+        snprintf_(text,sizeof(text),"Az:%03u El:%+03d S%u",s->azimuth_tenths/10,s->elevation_tenths/10,s->settings.squelch);
+    else snprintf_(text,sizeof(text),"Az:--- El:--- S%u",s->settings.squelch);
     UI_PrintStringSmallNormal(text,0,127,1);
     snprintf_(text,sizeof(text),"RX %lu.%05lu",(unsigned long)(s->applied.rx_hz/1000000u),
               (unsigned long)(s->applied.rx_hz%1000000u/10u));

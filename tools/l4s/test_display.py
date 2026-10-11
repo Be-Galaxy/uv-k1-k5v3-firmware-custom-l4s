@@ -66,7 +66,7 @@ class DisplayTest(unittest.TestCase):
         self.send(CONTEXT,struct.pack('<Hh16s',1370,-340,b'DOSAAF-85'))
         lines=self.render()
         self.assertEqual('DOSAAF-85 FM',lines[0])
-        self.assertEqual('Az:137 El:-34',lines[1])
+        self.assertEqual('Az:137 El:-34 S0',lines[1])
         self.send(CONTEXT,struct.pack('<Hh16s',3599,900,b'ABCDEFGHIJKLMNOP'))
         self.render()  # Longest name / angular extrema remain inside the LCD.
 
@@ -100,6 +100,10 @@ class DisplayTest(unittest.TestCase):
         for _ in range(5):self.lib.Host_MenuKey(12)
         second=self.render()
         self.assertIn('ARM NEXT',second[1]);self.assertIn('CW WPM',second[2]);self.assertIn('CW TONE',second[3])
-        self.assertIn('CW VOLUME',second[4]);self.assertIn('APPLY + SAVE',second[5])
+        self.assertIn('CW VOLUME',second[4]);self.assertIn('SQUELCH 0 OFF',second[5])
+        for _ in range(5):self.lib.Host_MenuKey(12)
+        third=self.render()
+        self.assertIn('SQUELCH 0 OFF',third[4]);self.assertIn('APPLY + SAVE',third[5])
+        self.assertEqual(1,sum('APPLY + SAVE' in line for line in third))
 
 if __name__=='__main__': unittest.main()

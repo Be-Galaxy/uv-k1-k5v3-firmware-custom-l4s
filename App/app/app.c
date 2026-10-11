@@ -839,7 +839,11 @@ void APP_StartListening(FUNCTION_Type_t function)
     if (function == FUNCTION_MONITOR)
 #endif
     {   // squelch is disabled
-        if (gScreenToDisplay != DISPLAY_MENU)     // 1of11 .. don't close the menu
+        if (gScreenToDisplay != DISPLAY_MENU
+#ifdef ENABLE_L4S_CONTROL
+            && !L4S_Active() // Opening satellite RX audio must not navigate away from its page/menu.
+#endif
+        )
             GUI_SelectNextDisplay(DISPLAY_MAIN);
     }
     else

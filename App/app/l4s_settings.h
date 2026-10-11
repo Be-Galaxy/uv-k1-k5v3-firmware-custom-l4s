@@ -5,9 +5,11 @@
 #include <stdbool.h>
 #include "driver/keyboard.h"
 #define L4S_PROFILE_SIZE 32u
+#define L4S_MENU_ITEMS 11u
+#define L4S_MENU_SAVE 10u
 #define L4S_PROFILE_ADDR 0x00A180u /* Unallocated tail of settings sector; calibration is at 0x010000. */
 typedef struct {
-    uint8_t mode, power, wpm, pitch, volume, tx_tone, rx_tone, arm_tone;
+    uint8_t mode, power, wpm, pitch, volume, tx_tone, rx_tone, arm_tone, squelch;
 } L4S_UserConfig;
 typedef struct {
     L4S_UserConfig draft;

@@ -12,7 +12,7 @@ def main():
     parser.add_argument('output')
     parser.add_argument('--menu',action='store_true')
     args=parser.parse_args()
-    labels=('Mode/power/operating CTCSS','Activation preset and CW parameters') if args.menu else (
+    labels=('Mode/power/operating CTCSS','CW parameters and squelch','Apply and save') if args.menu else (
         'FM: mode and operating CTCSS','Phone PTT: Doppler held','CW: mode visible before/while sending','Physical PTT: session kept')
     canvas=Image.new('RGB',(544,300*len(labels)),'#202020')
     draw=ImageDraw.Draw(canvas)
@@ -28,8 +28,7 @@ def main():
         if index!=2 or args.menu: send(TONE,struct.pack('<H',670))
         if args.menu:
             fw.lib.Host_MenuOpen()
-            if index==1:
-                for _ in range(5):fw.lib.Host_MenuKey(12)
+            for _ in range(index*5):fw.lib.Host_MenuKey(12)
         else:
             if index==1: send(PTT,b'\1'+struct.pack('<I',1))
             if index==2: send(CW,b'\24\4TEST')

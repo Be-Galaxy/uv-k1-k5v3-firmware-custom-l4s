@@ -41,3 +41,5 @@ EXPORT unsigned Host_ProfileWrites(void) {return profile_writes;}
 EXPORT uint16_t Host_CtcssValue(uint8_t choice) {return L4S_CtcssValue(choice);}
 EXPORT void Host_ProfileKey(const uint8_t *key) {L4S_SetProfileKey(key);}
 EXPORT const uint8_t *Host_ReadProfileKey(void) {return L4S_GetProfileKey();}
+EXPORT uint8_t *Host_ProfileData(void) {return record;}
+EXPORT void Host_DefaultConfig(L4S_UserConfig *c) {L4S_DefaultConfig(c);}

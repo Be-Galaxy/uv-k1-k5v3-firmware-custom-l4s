@@ -3,11 +3,11 @@ import re
 import struct
 import unittest
 from pathlib import Path
-from protocol import body, OPEN, STATUS, SETTINGS, MODE, PAIR, PTT, TONE, frame, Decoder, CONTEXT
+from protocol import body, OPEN, STATUS, SETTINGS, MODE, PAIR, PTT, TONE, frame, Decoder, CONTEXT, crc
 from simulator import Firmware, ROOT
 
 class Config(ctypes.Structure):
-    _fields_=[(name,ctypes.c_uint8) for name in ('mode','power','wpm','pitch','volume','tx_tone','rx_tone','arm_tone')]
+    _fields_=[(name,ctypes.c_uint8) for name in ('mode','power','wpm','pitch','volume','tx_tone','rx_tone','arm_tone','squelch')]
 
 class IoTest(unittest.TestCase):
     def setUp(self):
@@ -20,6 +20,7 @@ class IoTest(unittest.TestCase):
         self.lib.Host_SaveConfig.argtypes=[ctypes.POINTER(Config)];self.lib.Host_SaveConfig.restype=ctypes.c_bool
         self.lib.Host_ReadConfig.argtypes=[ctypes.POINTER(Config)];self.lib.Host_ReadConfig.restype=ctypes.c_bool
         self.lib.Host_Key.argtypes=[ctypes.c_uint,ctypes.c_bool];self.lib.Host_Key.restype=ctypes.c_bool
+        self.lib.Host_MenuKey.argtypes=[ctypes.c_uint];self.lib.Host_MenuKey.restype=ctypes.c_bool
         self.seq=0;self.send(OPEN)
 
     def send(self,cmd,data=b''):
@@ -78,7 +79,7 @@ class IoTest(unittest.TestCase):
         self.assertFalse(self.lib.Host_Key(10,True))
 
     def test_profile_round_trip_and_unchanged_save_do_not_wear_flash(self):
-        config=Config(1,3,25,70,4,1,9,4)
+        config=Config(1,3,25,70,4,1,9,4,6)
         self.lib.Host_ProfileKey.argtypes=[ctypes.c_void_p]
         self.lib.Host_ProfileKey(bytes(range(16)))
         self.assertTrue(self.lib.Host_SaveConfig(ctypes.byref(config)))
@@ -89,6 +90,62 @@ class IoTest(unittest.TestCase):
         self.assertEqual(bytes(range(16)),bytes(self.lib.Host_ReadProfileKey()[:16]))
         self.assertTrue(self.lib.Host_SaveConfig(ctypes.byref(config)))
         self.assertEqual(1,self.lib.Host_ProfileWrites())
+
+    def test_default_squelch_is_off_and_menu_selects_all_levels(self):
+        self.lib.Host_DefaultConfig.argtypes=[ctypes.POINTER(Config)]
+        self.lib.Host_MenuDraft.argtypes=[ctypes.POINTER(Config)]
+        config=Config()
+        self.lib.Host_DefaultConfig(ctypes.byref(config))
+        self.assertEqual(0,config.squelch)
+        self.lib.Host_MenuOpen()
+        for _ in range(9):self.lib.Host_MenuKey(12)
+        self.lib.Host_MenuKey(10)  # Edit SQL; DOWN wraps 0 to 9.
+        for expected in range(9,-1,-1):
+            self.lib.Host_MenuKey(12)
+            self.lib.Host_MenuDraft(ctypes.byref(config))
+            self.assertEqual(expected,config.squelch)
+        self.lib.Host_MenuKey(10)
+        self.lib.Host_MenuKey(12)
+        self.assertTrue(self.lib.Host_MenuKey(10))  # Save remains reachable.
+
+    def test_v1_profile_migrates_to_open_squelch_and_v2_keeps_level(self):
+        self.lib.Host_ProfileData.restype=ctypes.POINTER(ctypes.c_uint8)
+        config=Config(0,3,20,60,4,1,0,4,7)
+        self.assertTrue(self.lib.Host_SaveConfig(ctypes.byref(config)))
+        record=self.lib.Host_ProfileData()
+        self.assertEqual(2,record[4]);self.assertEqual(7,record[29])
+        legacy=bytearray(record[:32]);legacy[4]=1;legacy[29]=0
+        struct.pack_into('<H',legacy,30,crc(legacy[:30]))
+        for index,value in enumerate(legacy):record[index]=value
+        decoded=Config()
+        self.assertTrue(self.lib.Host_ReadConfig(ctypes.byref(decoded)))
+        self.assertEqual(0,decoded.squelch)
+        self.assertEqual(bytes(config)[:8],bytes(decoded)[:8])
+        self.assertTrue(self.lib.Host_SaveConfig(ctypes.byref(decoded)))
+        self.assertEqual(2,record[4])
+        config.squelch=10
+        self.assertFalse(self.lib.Host_SaveConfig(ctypes.byref(config)))
+        record[4]=3  # A future profile must never be overwritten.
+        config.squelch=4
+        self.assertFalse(self.lib.Host_SaveConfig(ctypes.byref(config)))
+
+    def test_squelch_edit_is_read_only_during_tx_and_exit_discards_draft(self):
+        self.lib.Host_MenuDraft.argtypes=[ctypes.POINTER(Config)]
+        self.lib.Host_MenuOpen()
+        for _ in range(9):self.lib.Host_MenuKey(12)
+        self.lib.Host_MenuKey(10);self.lib.Host_MenuKey(11)
+        config=Config();self.lib.Host_MenuDraft(ctypes.byref(config))
+        self.assertEqual(1,config.squelch)
+        self.lib.Host_MenuKey(13);self.lib.Host_MenuOpen()
+        self.lib.Host_MenuDraft(ctypes.byref(config));self.assertEqual(0,config.squelch)
+        self.lib.Host_MenuKey(13)
+        self.send(MODE,b'\0\0\0');self.send(PAIR,struct.pack('<IIBI',435100000,145900000,1,1))
+        self.send(PTT,b'\1'+struct.pack('<I',1))
+        self.lib.Host_MenuOpen()
+        for _ in range(9):self.lib.Host_MenuKey(12)
+        self.lib.Host_MenuKey(10);self.lib.Host_MenuKey(11)
+        self.lib.Host_MenuDraft(ctypes.byref(config));self.assertEqual(0,config.squelch)
+        self.assertEqual(55,len(self.send(SETTINGS))-12)  # Existing Android wire layout unchanged.
 
     def test_unknown_storage_invalid_values_and_failed_readback_are_rejected(self):
         config=Config(0,3,20,60,4,1,0,4)

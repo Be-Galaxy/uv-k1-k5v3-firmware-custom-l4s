@@ -67,5 +67,6 @@ EXPORT bool Host_MenuKey(unsigned key) {
     bool apply=L4S_MenuKey(&menu,(KEY_Code_t)key,state.tx_window_open);
     state.menu_open=menu.open;return apply;
 }
+EXPORT void Host_MenuDraft(L4S_UserConfig *config) {*config=menu.draft;}
 EXPORT void Host_ArmNext(uint8_t choice) { state.settings.arm_tone=choice;state.arm_next=true; }
 EXPORT size_t Host_Encode(const uint8_t *body,size_t n,uint8_t *out) { return L4S_EncodeFrame(body,n,out); }

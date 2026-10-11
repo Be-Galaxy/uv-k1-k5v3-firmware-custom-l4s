@@ -70,6 +70,9 @@ void CW_EndTxNow(void)
 
 	RADIO_SetVfoState(VFO_STATE_NORMAL);  // only variables
     RADIO_SelectVfos();                   // only variables
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_Active()) gMonitor=L4S_GetState()->settings.squelch==0;
+#endif
     if (gMonitor)
         APP_StartListening(FUNCTION_MONITOR);
 }
