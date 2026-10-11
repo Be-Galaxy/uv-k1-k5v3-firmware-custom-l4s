@@ -36,6 +36,7 @@ static L4S_UserConfig profile;
 static bool apply_user_config(const L4S_UserConfig *config);
 static void apply_tone(FREQ_Config_t *target, uint8_t choice);
 static void setup_receive(void);
+static void profile_read(uint32_t address,void *data,unsigned size);
 static struct {
     VFO_Info_t vfo[2];
     uint8_t tx_vfo, cross, dual, battery_save, key_input, wpm, pitch, volume, squelch;
@@ -113,6 +114,7 @@ static bool enter(void)
     state.saved_settings=profile;memset(state.saved_key,0,16);memset(state.context_key,0,16);
     if(state.saved_settings_valid) memcpy(state.saved_key,L4S_GetProfileKey(),16);
     state.user_modified=false;
+    state.profile_selected=false;state.step_hz=250;
     apply_user_config(&profile); state.settings=profile;
     state.rx_mode=profile.mode==0 || profile.mode==3 ? L4S_FM : profile.mode==1 ? L4S_CW_MODE : L4S_USB;
     state.tx_mode=profile.mode==0 || profile.mode==3 ? L4S_FM : L4S_CW_MODE;
@@ -272,8 +274,30 @@ static bool cw_start(const uint8_t *text, uint8_t length, uint8_t wpm)
 static bool cw_active(void) { return gCW_PlaybackActive; }
 static bool cw_failed(void) { return gTxTimeoutReached || VfoState[1]!=VFO_STATE_NORMAL; }
 static uint8_t cw_progress(void) { return CW_TextPlaybackPosition(); }
+static uint8_t select_profile(uint8_t operation,const uint8_t *p)
+{
+    (void)operation;
+    L4S_UserConfig candidate;
+    L4S_DefaultConfig(&candidate);candidate.power=saved.vfo[saved.tx_vfo].OUTPUT_POWER;
+    bool found=L4S_LoadSatelliteProfile(p,&candidate,profile_read);
+    if(!found) {
+        uint8_t record[L4S_PROFILE_SIZE];L4S_UserConfig legacy;
+        profile_read(L4S_PROFILE_ADDR,record,sizeof(record));
+        if(L4S_DecodeProfile(record,&legacy) && !memcmp(L4S_GetProfileKey(),p+16,16)) {candidate=legacy;found=true;}
+    }
+    if(!apply_user_config(&candidate)) return L4S_TX_REJECTED;
+    profile=state.settings=state.saved_settings=candidate;
+    memcpy(state.context_key,p,16);memcpy(state.saved_key,p,16);
+    memcpy(state.satellite_name,p+32,16);state.satellite_name[16]=0;
+    state.saved_settings_valid=found;state.profile_selected=true;state.profile_generation++;
+    state.context_valid=false;state.pair_ready=state.mode_ready=false;state.user_modified=false;
+    state.arm_next=false;state.arm_active=false;
+    state.rx_mode=candidate.mode==0 || candidate.mode==3 ? L4S_FM : candidate.mode==1 ? L4S_CW_MODE : L4S_USB;
+    state.tx_mode=candidate.mode==0 || candidate.mode==3 ? L4S_FM : L4S_CW_MODE;
+    gUpdateDisplay=true;return L4S_APPLIED;
+}
 static const L4S_Ops ops={enter,leave,validate_pair,apply_pair,set_mode,tone,ptt_on,stop_tx,
-                         cw_start,tx_state,cw_active,cw_failed,cw_progress,can_retune};
+                         cw_start,tx_state,cw_active,cw_failed,cw_progress,can_retune,select_profile};
 
 void L4S_ControlTick(void)
 {
@@ -316,15 +340,20 @@ bool L4S_LocalKey(KEY_Code_t key, bool pressed, bool held)
                     else {
                         const L4S_UserConfig old=state.settings;
                         L4S_SetProfileKey(state.context_key);
-                        if (apply_user_config(&menu.draft) && L4S_SaveProfile(&menu.draft,profile_read,profile_write)) {
+                        uint8_t result=12;
+                        if(apply_user_config(&menu.draft)) result=state.profile_selected ?
+                            L4S_SaveSatelliteProfile(state.context_key,state.satellite_name,&menu.draft,profile_read,profile_write) :
+                            (L4S_SaveProfile(&menu.draft,profile_read,profile_write) ? 0 : 12);
+                        if (!result) {
                             profile=state.settings=menu.draft;
                             state.saved_settings=profile;memcpy(state.saved_key,state.context_key,16);
                             state.saved_settings_valid=true;state.user_modified=true;
                             state.rx_mode=profile.mode==0 || profile.mode==3 ? L4S_FM : profile.mode==1 ? L4S_CW_MODE : L4S_USB;
                             state.tx_mode=profile.mode==0 || profile.mode==3 ? L4S_FM : L4S_CW_MODE;
                             state.mode_ready=true;state.arm_next=menu.arm_next;
+                            state.pair_ready=false;state.profile_generation++;
                             menu.open=false;
-                        } else {apply_user_config(&old);menu.error=12;}
+                        } else {apply_user_config(&old);menu.error=result;}
                     }
                 }
                 if (!menu.open) key_release_latch=true;
@@ -333,7 +362,7 @@ bool L4S_LocalKey(KEY_Code_t key, bool pressed, bool held)
             return true;
         }
         if (key==KEY_MENU && pressed) {
-            menu=(L4S_MenuState){.draft=state.settings,.open=true,.arm_next=state.arm_next};
+            menu=(L4S_MenuState){.draft=state.settings,.open=true,.arm_next=state.arm_next,.step_hz=state.step_hz};
             state.menu_open=true;gUpdateDisplay=true;return true;
         }
     }
@@ -348,7 +377,7 @@ void L4S_ProcessKeys(KEY_Code_t key, bool pressed, bool held)
 bool L4S_HandleUart(uint32_t port, const uint8_t *body, size_t size)
 {
     uint16_t cmd=size>=2 ? L4S_Read16(body) : 0;
-    if (cmd<L4S_HELLO || cmd>L4S_SETTINGS) {
+    if (cmd<L4S_HELLO || cmd>L4S_PROFILE) {
         if (L4S_Active()) L4S_Abort(&state,L4S_CANCELLED);
         return false;
     }

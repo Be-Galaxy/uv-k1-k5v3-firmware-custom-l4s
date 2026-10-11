@@ -60,7 +60,7 @@ static const AddrMapping_t ADDR_MAPPINGS[] = {
                                                 // them together with the VFOs)
 
 #ifdef ENABLE_L4S_CONTROL
-    _MK_MAPPING(0x00A000, 0x00A000, 0x00A1A0),  // Includes guarded L4S control profile at 0xA180..0xA19F.
+    _MK_MAPPING(0x00A000, 0x00A000, 0x00B000),  // Legacy profile plus 56 guarded satellite profiles at 0xA200..0xAFFF.
 #else
     _MK_MAPPING(0x00A000, 0x00A000, 0x00A171),  // Settings * 16 Bytes (ex 0x004000)        0x00A000 -> 0x00A010
 #endif

@@ -18,7 +18,7 @@ static void display_menu(const L4S_State *s,const L4S_MenuState *menu)
         snprintf_(text,sizeof(text),"%c %s",item==menu->index ? (menu->editing ? '*' : '>') : ' ',value);
         UI_PrintStringSmallNormal(text,0,0,row);
     }
-    const char *footer=s->tx_window_open ? "TX: VIEW ONLY" : menu->error==12 ? "SAVE ERROR / EXIT" :
+    const char *footer=s->tx_window_open ? "TX: VIEW ONLY" : menu->error==13 ? "PROFILE FULL EXIT" : menu->error==12 ? "SAVE ERROR / EXIT" :
         menu->error==3 ? "SET FM + ARM TONE" : "M:EDIT X:CANCEL";
     UI_PrintStringSmallNormal(footer,0,0,6);
     ST7565_BlitFullScreen();

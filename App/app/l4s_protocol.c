@@ -33,6 +33,7 @@ void L4S_Init(L4S_State *s, const L4S_Ops *ops)
 {
     memset(s, 0, sizeof(*s)); s->ops = ops;
     L4S_DefaultConfig(&s->settings);
+    s->step_hz=250;
 }
 
 static void stop(L4S_State *s, uint8_t error)
@@ -114,10 +115,29 @@ static size_t snapshot(L4S_State *s, uint8_t *p)
 static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
 {
     switch (cmd) {
+    case L4S_PROFILE: {
+        if(!n || (p[0]==0 && n!=49) || (p[0]==1 && n!=15) || (p[0]==2 && n!=1)) return L4S_BAD_LENGTH;
+        if(p[0]>2) return L4S_UNSUPPORTED;
+        if(p[0]==2) return L4S_APPLIED;
+        if(s->menu_open || s->tx_window_open || s->owner || s->ops->tx_state() || !s->ops->can_retune()) return L4S_BUSY;
+        if(p[0]==0) {
+            for(unsigned i=33;i<49;i++) if(p[i] && (p[i]<' ' || p[i]>'~')) return L4S_RANGE;
+            if(!s->ops->profile) return L4S_UNSUPPORTED;
+            return s->ops->profile(0,p+1);
+        }
+        L4S_UserConfig candidate=s->settings;
+        if(L4S_Read32(p+11)!=s->profile_generation) return L4S_STALE;
+        candidate.rx_base_hz=L4S_Read32(p+1);candidate.tx_base_hz=L4S_Read32(p+5);
+        uint16_t step=L4S_Read16(p+9);
+        if(!candidate.rx_base_hz || !L4S_ValidConfig(&candidate) || step<10 || step>10000 || step%10) return L4S_RANGE;
+        s->settings=candidate;s->step_hz=step;s->pair_ready=false;
+        return L4S_APPLIED;
+    }
     case L4S_CONTEXT: {
         if (n!=20 && n!=36) return L4S_BAD_LENGTH;
         const uint16_t az=L4S_Read16(p);
         const int16_t el=(int16_t)L4S_Read16(p+2);
+        if(n==36 && s->profile_selected && memcmp(s->context_key,p+20,16)) return L4S_STALE;
         if(n==36 && az==0xffff && el==INT16_MIN) {
             memcpy(s->context_key,p+20,16);s->context_valid=false;return L4S_APPLIED;
         }
@@ -196,7 +216,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
     if (length < 12 || length > L4S_MAX_BODY || L4S_Read16(body+2) != length - 4) return 0;
     const uint16_t cmd=L4S_Read16(body), seq=L4S_Read16(body+6);
     const uint32_t session=L4S_Read32(body+8);
-    if (cmd < L4S_HELLO || cmd > L4S_SETTINGS) return 0;
+    if (cmd < L4S_HELLO || cmd > L4S_PROFILE) return 0;
     L4S_Tick(s, now);
     uint8_t result=L4S_APPLIED;
     if (body[4] != L4S_VERSION || body[5] != 0) result=L4S_UNSUPPORTED;
@@ -235,7 +255,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
     if (cmd == L4S_HELLO && result == L4S_APPLIED) {
         uint8_t *p=out+12;
         memcpy(p,"L4S1",4); p[4]=3; /* UV-K1 / UV-K5 V3 shared firmware */
-        uint32_t features=L4S_CAP_PAIR|L4S_CAP_PTT|L4S_CAP_CW|L4S_CAP_TONE|L4S_CAP_CONTEXT|L4S_CAP_SETTINGS;
+        uint32_t features=L4S_CAP_PAIR|L4S_CAP_PTT|L4S_CAP_CW|L4S_CAP_TONE|L4S_CAP_CONTEXT|L4S_CAP_SETTINGS|L4S_CAP_PROFILES;
         L4S_Write32(p+5,features);
         L4S_Write16(p+9,10); p[11]=L4S_MAX_TEXT; p[12]=10; p[13]=45;
         L4S_Write16(p+14,L4S_TIMEOUT_MS);
@@ -250,7 +270,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
         data_size=42;
     } else {
         data_size=snapshot(s,out+12);
-        if (cmd==L4S_SETTINGS && result==L4S_APPLIED) {
+        if ((cmd==L4S_SETTINGS || cmd==L4S_PROFILE) && result==L4S_APPLIED) {
             uint8_t *p=out+12+data_size;
             memcpy(p,s->saved_settings_valid ? &s->saved_settings : &s->settings,8);
             L4S_Write16(p+8,s->tx_mode==L4S_FM ? L4S_CtcssValue(s->arm_active ? s->settings.arm_tone : s->settings.tx_tone) : 0);
@@ -260,6 +280,14 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
                 (s->user_modified ? 8 : 0)|(s->saved_settings_valid ? 16 : 0);
             memcpy(p+15,s->saved_key,16);
             data_size+=31;
+            if(cmd==L4S_PROFILE) {
+                p=out+12+data_size;
+                p[0]=s->settings.squelch;
+                L4S_Write32(p+1,s->settings.rx_base_hz);L4S_Write32(p+5,s->settings.tx_base_hz);
+                L4S_Write32(p+9,(uint32_t)s->settings.rx_correction_hz);L4S_Write32(p+13,(uint32_t)s->settings.tx_correction_hz);
+                L4S_Write16(p+17,s->step_hz);L4S_Write32(p+19,s->profile_generation);
+                p[23]=L4S_SAT_PROFILE_COUNT;data_size+=24;
+            }
         }
     }
     L4S_Write16(out+2,L4S_META_SIZE+data_size);

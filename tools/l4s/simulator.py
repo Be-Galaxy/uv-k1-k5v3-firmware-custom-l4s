@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--library")
     args = parser.parse_args()
     firmware = Firmware(args.library)
+    firmware.lib.Host_IoReset()  # Erased mock SPI storage on simulator startup; reconnect preserves it.
     epoch = time.monotonic()
     now = lambda: int((time.monotonic() - epoch) * 1000) & 0xFFFFFFFF
     with socket.socket() as listener:

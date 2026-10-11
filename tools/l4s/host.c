@@ -39,8 +39,20 @@ static bool cw_active(void) { return active; }
 static bool cw_failed(void) { return denied; }
 static uint8_t cw_progress(void) { return progress; }
 static bool can_retune(void) { return !tx && !active; }
+void Host_StorageRead(uint32_t,void *,unsigned);
+void Host_StorageWrite(uint32_t,const void *,unsigned);
+static uint8_t profile(uint8_t operation,const uint8_t *p) {
+    (void)operation;
+    L4S_DefaultConfig(&state.settings);
+    state.saved_settings_valid=L4S_LoadSatelliteProfile(p,&state.settings,Host_StorageRead);
+    state.saved_settings=state.settings;memcpy(state.context_key,p,16);memcpy(state.saved_key,p,16);
+    memcpy(state.satellite_name,p+32,16);state.satellite_name[16]=0;
+    state.profile_selected=true;state.profile_generation++;
+    state.pair_ready=state.mode_ready=false;state.context_valid=false;state.user_modified=false;
+    return 0;
+}
 static const L4S_Ops ops={enter,leave,validate,apply,mode,tone,ptt,stop,cw,
-                         tx_state,cw_active,cw_failed,cw_progress,can_retune};
+                         tx_state,cw_active,cw_failed,cw_progress,can_retune,profile};
 EXPORT void Host_Reset(void) { tx=progress=0;active=denied=false;starts=leaves=writes=0;clock_ms=0;key_latch=false;memset(&menu,0,sizeof(menu));L4S_Init(&state,&ops); }
 EXPORT void Host_Tick(uint32_t now) {
     clock_ms=now;
@@ -62,7 +74,7 @@ EXPORT unsigned Host_Writes(void) { return writes; }
 EXPORT unsigned Host_Leaves(void) { return leaves; }
 EXPORT uint8_t Host_LocalPtt(uint8_t pressed,uint32_t now) { return L4S_LocalPtt(&state,pressed!=0,now); }
 EXPORT bool Host_Key(unsigned key,bool pressed) { return L4S_FilterKey(&state,(KEY_Code_t)key,pressed,&key_latch); }
-EXPORT void Host_MenuOpen(void) { menu=(L4S_MenuState){.draft=state.settings,.open=true};state.menu_open=true; }
+EXPORT void Host_MenuOpen(void) { menu=(L4S_MenuState){.draft=state.settings,.open=true,.step_hz=state.step_hz};state.menu_open=true; }
 EXPORT bool Host_MenuKey(unsigned key) {
     bool apply=L4S_MenuKey(&menu,(KEY_Code_t)key,state.tx_window_open);
     state.menu_open=menu.open;return apply;

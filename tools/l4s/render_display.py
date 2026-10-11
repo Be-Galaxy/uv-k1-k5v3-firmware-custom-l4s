@@ -4,7 +4,7 @@ import ctypes
 import struct
 from pathlib import Path
 from PIL import Image, ImageDraw
-from protocol import body, OPEN, MODE, PAIR, PTT, CW, CONTEXT, TONE
+from protocol import body, OPEN, MODE, PAIR, PTT, CW, CONTEXT, TONE, PROFILE
 from simulator import Firmware
 
 def main():
@@ -12,7 +12,7 @@ def main():
     parser.add_argument('output')
     parser.add_argument('--menu',action='store_true')
     args=parser.parse_args()
-    labels=('Mode/power/operating CTCSS','CW parameters and squelch','Apply and save') if args.menu else (
+    labels=('Mode/power/operating CTCSS','CW parameters and squelch','Independent bases/corrections and save') if args.menu else (
         'FM: mode and operating CTCSS','Phone PTT: Doppler held','CW: mode visible before/while sending','Physical PTT: session kept')
     canvas=Image.new('RGB',(544,300*len(labels)),'#202020')
     draw=ImageDraw.Draw(canvas)
@@ -22,7 +22,8 @@ def main():
             nonlocal seq
             seq+=1
             return fw.request(body(command,seq,123,data),10)
-        send(OPEN);send(MODE,bytes([3 if index==2 else 0]*2+[0]))
+        send(OPEN);send(PROFILE,b'\1'+struct.pack('<IIHI',435100000,145900000,250,0))
+        send(MODE,bytes([3 if index==2 and not args.menu else 0]*2+[0]))
         send(CONTEXT,struct.pack('<Hh16s',1370,340,b'DOSAAF-85'))
         send(PAIR,struct.pack('<IIBI',435100010,145900000,1,1))
         if index!=2 or args.menu: send(TONE,struct.pack('<H',670))

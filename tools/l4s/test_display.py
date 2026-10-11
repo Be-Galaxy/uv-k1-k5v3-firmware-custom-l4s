@@ -103,7 +103,8 @@ class DisplayTest(unittest.TestCase):
         self.assertIn('CW VOLUME',second[4]);self.assertIn('SQUELCH 0 OFF',second[5])
         for _ in range(5):self.lib.Host_MenuKey(12)
         third=self.render()
-        self.assertIn('SQUELCH 0 OFF',third[4]);self.assertIn('APPLY + SAVE',third[5])
+        self.assertIn('RX B ',third[1]);self.assertIn('TX B ',third[2]);self.assertIn('RX CORR',third[3])
+        self.assertIn('TX CORR',third[4]);self.assertIn('APPLY + SAVE',third[5])
         self.assertEqual(1,sum('APPLY + SAVE' in line for line in third))
 
 if __name__=='__main__': unittest.main()
