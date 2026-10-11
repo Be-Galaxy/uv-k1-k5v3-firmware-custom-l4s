@@ -1,5 +1,6 @@
 /* Host-only, no hardware access. Copyright 2026 Iu_yang1. SPDX-License-Identifier: Apache-2.0 */
 #include "l4s_protocol.h"
+#include "l4s_io.h"
 #include <string.h>
 #ifdef _WIN32
 #define EXPORT __declspec(dllexport)
@@ -7,6 +8,9 @@
 #define EXPORT
 #endif
 static L4S_State state;
+static L4S_MenuState menu;
+static bool key_latch;
+const L4S_MenuState *L4S_GetMenu(void) { return &menu; }
 const L4S_State *L4S_GetState(void) { return &state; }
 static uint8_t tx, progress;
 static bool active, denied;
@@ -37,7 +41,7 @@ static uint8_t cw_progress(void) { return progress; }
 static bool can_retune(void) { return !tx && !active; }
 static const L4S_Ops ops={enter,leave,validate,apply,mode,tone,ptt,stop,cw,
                          tx_state,cw_active,cw_failed,cw_progress,can_retune};
-EXPORT void Host_Reset(void) { tx=progress=0;active=denied=false;starts=leaves=writes=0;clock_ms=0;L4S_Init(&state,&ops); }
+EXPORT void Host_Reset(void) { tx=progress=0;active=denied=false;starts=leaves=writes=0;clock_ms=0;key_latch=false;memset(&menu,0,sizeof(menu));L4S_Init(&state,&ops); }
 EXPORT void Host_Tick(uint32_t now) {
     clock_ms=now;
     /* Mock elapsed CW progress, not a timing or RF simulation. */
@@ -57,4 +61,11 @@ EXPORT unsigned Host_Starts(void) { return starts; }
 EXPORT unsigned Host_Writes(void) { return writes; }
 EXPORT unsigned Host_Leaves(void) { return leaves; }
 EXPORT uint8_t Host_LocalPtt(uint8_t pressed,uint32_t now) { return L4S_LocalPtt(&state,pressed!=0,now); }
+EXPORT bool Host_Key(unsigned key,bool pressed) { return L4S_FilterKey(&state,(KEY_Code_t)key,pressed,&key_latch); }
+EXPORT void Host_MenuOpen(void) { menu=(L4S_MenuState){.draft=state.settings,.open=true};state.menu_open=true; }
+EXPORT bool Host_MenuKey(unsigned key) {
+    bool apply=L4S_MenuKey(&menu,(KEY_Code_t)key,state.tx_window_open);
+    state.menu_open=menu.open;return apply;
+}
+EXPORT void Host_ArmNext(uint8_t choice) { state.settings.arm_tone=choice;state.arm_next=true; }
 EXPORT size_t Host_Encode(const uint8_t *body,size_t n,uint8_t *out) { return L4S_EncodeFrame(body,n,out); }

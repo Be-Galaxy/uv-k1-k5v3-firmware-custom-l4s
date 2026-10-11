@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "l4s_settings.h"
 
 #define L4S_VERSION 1
 #define L4S_TIMEOUT_MS 1500u
@@ -15,7 +16,7 @@
 
 enum {
     L4S_HELLO = 0x0700, L4S_OPEN, L4S_KEEPALIVE, L4S_CLOSE,
-    L4S_STATUS, L4S_PAIR, L4S_MODE, L4S_TONE, L4S_PTT, L4S_CW, L4S_STOP, L4S_CONTEXT
+    L4S_STATUS, L4S_PAIR, L4S_MODE, L4S_TONE, L4S_PTT, L4S_CW, L4S_STOP, L4S_CONTEXT, L4S_SETTINGS
 };
 enum {
     L4S_APPLIED, L4S_ACCEPTED, L4S_BAD_LENGTH, L4S_BAD_SESSION, L4S_BUSY,
@@ -26,7 +27,7 @@ enum { L4S_FM, L4S_AM, L4S_USB, L4S_CW_MODE };
 enum { L4S_TX_OFF, L4S_TX_VOICE, L4S_TX_CW, L4S_TX_LOCAL };
 enum { L4S_CW_IDLE, L4S_CW_QUEUED, L4S_CW_SENDING, L4S_CW_DONE, L4S_CW_CANCELLED, L4S_CW_FAILED };
 enum { L4S_CAP_PAIR = 1u, L4S_CAP_PTT = 2u, L4S_CAP_CW = 4u, L4S_CAP_TONE = 8u,
-       L4S_CAP_LIVE_FM = 16u, L4S_CAP_LIVE_CW = 32u, L4S_CAP_CONTEXT = 64u };
+       L4S_CAP_LIVE_FM = 16u, L4S_CAP_LIVE_CW = 32u, L4S_CAP_CONTEXT = 64u, L4S_CAP_SETTINGS = 128u };
 
 typedef struct {
     uint32_t rx_hz, tx_hz, revision;
@@ -61,6 +62,11 @@ typedef struct {
     uint16_t azimuth_tenths;
     int16_t elevation_tenths;
     bool context_valid;
+    L4S_UserConfig settings;
+    L4S_UserConfig saved_settings;
+    uint8_t context_key[16], saved_key[16];
+    bool saved_settings_valid, user_modified;
+    bool menu_open, arm_next, arm_active;
 } L4S_State;
 
 void L4S_Init(L4S_State *s, const L4S_Ops *ops);

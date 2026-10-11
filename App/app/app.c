@@ -2344,7 +2344,7 @@ static void ALARM_Off(void)
 static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
 #ifdef ENABLE_L4S_CONTROL
-    if (L4S_LocalKey(bKeyPressed)) return;
+    if (L4S_LocalKey(Key,bKeyPressed,bKeyHeld)) return;
 #endif
 #ifdef ENABLE_CODE_PRACTICE
 	if (gCW_CpoActive) {

@@ -2,6 +2,8 @@
 #include "usbd_cdc.h"
 #ifdef ENABLE_L4S_CONTROL
 #include "app/l4s_control.h"
+#include "app/l4s_io.h"
+static L4S_ReplyBuffer l4s_reply;
 #endif
 
 /*!< endpoint address */
@@ -104,6 +106,10 @@ volatile bool ep_tx_busy_flag = false;
 
 void usbd_configure_done_callback(void)
 {
+#ifdef ENABLE_L4S_CONTROL
+    ep_tx_busy_flag=false;
+    L4S_ReplyComplete(&l4s_reply); /* Reconfiguration cancels the old endpoint transfer. */
+#endif
     /* setup first out ep read transfer */
     usbd_ep_start_read(CDC_OUT_EP, read_buffer, sizeof(read_buffer));
 }
@@ -131,7 +137,7 @@ void usbd_cdc_acm_bulk_out(uint8_t ep, uint32_t nbytes)
             pointer += size;
         }
 
-        *rx_buf->write_pointer = pointer;
+        *rx_buf->write_pointer = pointer % rx_buf->size;
     }
 
     /* setup next out ep read transfer */
@@ -145,6 +151,9 @@ void usbd_cdc_acm_bulk_in(uint8_t ep, uint32_t nbytes)
         usbd_ep_start_write(CDC_IN_EP, NULL, 0);
     } else {
         ep_tx_busy_flag = false;
+#ifdef ENABLE_L4S_CONTROL
+        L4S_ReplyComplete(&l4s_reply);
+#endif
     }
 }
 
@@ -177,6 +186,17 @@ void cdc_acm_init(cdc_acm_rx_buf_t rx_buf)
 }
 
 volatile uint8_t dtr_enable = 0;
+#ifdef ENABLE_L4S_CONTROL
+static int submit_l4s_reply(const uint8_t *data, size_t size)
+{
+    return usbd_ep_start_write(CDC_IN_EP,data,(uint32_t)size);
+}
+bool cdc_acm_l4s_reply(const uint8_t *buf, uint32_t size)
+{
+    if (ep_tx_busy_flag) return false;
+    return L4S_SendReply(&l4s_reply,dtr_enable!=0,buf,size,submit_l4s_reply);
+}
+#endif
 
 void usbd_cdc_acm_set_dtr(uint8_t intf, bool dtr)
 {

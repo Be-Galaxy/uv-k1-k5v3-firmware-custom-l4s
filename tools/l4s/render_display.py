@@ -4,16 +4,19 @@ import ctypes
 import struct
 from pathlib import Path
 from PIL import Image, ImageDraw
-from protocol import body, OPEN, MODE, PAIR, PTT, CW, CONTEXT
+from protocol import body, OPEN, MODE, PAIR, PTT, CW, CONTEXT, TONE
 from simulator import Firmware
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output')
+    parser.add_argument('--menu',action='store_true')
     args=parser.parse_args()
-    canvas=Image.new('RGB',(544,1200),'#202020')
+    labels=('Mode/power/operating CTCSS','Activation preset and CW parameters') if args.menu else (
+        'FM: mode and operating CTCSS','Phone PTT: Doppler held','CW: mode visible before/while sending','Physical PTT: session kept')
+    canvas=Image.new('RGB',(544,300*len(labels)),'#202020')
     draw=ImageDraw.Draw(canvas)
-    for index,label in enumerate(('RX tracking','Voice TX: both frequencies held','CW operation: both frequencies held','Physical PTT: USB session stays connected')):
+    for index,label in enumerate(labels):
         fw=Firmware();seq=0
         def send(command,data=b''):
             nonlocal seq
@@ -22,9 +25,15 @@ def main():
         send(OPEN);send(MODE,bytes([3 if index==2 else 0]*2+[0]))
         send(CONTEXT,struct.pack('<Hh16s',1370,340,b'DOSAAF-85'))
         send(PAIR,struct.pack('<IIBI',435100010,145900000,1,1))
-        if index==1: send(PTT,b'\1'+struct.pack('<I',1))
-        if index==2: send(CW,b'\24\4TEST')
-        if index==3: fw.lib.Host_LocalPtt(1,10)
+        if index!=2 or args.menu: send(TONE,struct.pack('<H',670))
+        if args.menu:
+            fw.lib.Host_MenuOpen()
+            if index==1:
+                for _ in range(5):fw.lib.Host_MenuKey(12)
+        else:
+            if index==1: send(PTT,b'\1'+struct.pack('<I',1))
+            if index==2: send(CW,b'\24\4TEST')
+            if index==3: fw.lib.Host_LocalPtt(1,10)
         frame=ctypes.create_string_buffer(896)
         fw.lib.Host_Render.argtypes=[ctypes.c_void_p]
         if fw.lib.Host_Render(frame): raise RuntimeError('LCD layout overflow')

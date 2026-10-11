@@ -19,7 +19,10 @@ void UI_PrintString(const char *text,uint8_t start,uint8_t end,uint8_t row,uint8
     (void)end;
     size_t n=strlen(text);
     if (row>=6 || start+n*width>128 || n>=sizeof(lines[0])) { overflow++; return; }
-    memcpy(lines[row],text,n+1);
+    if (lines[row][0]) {
+        strncat(lines[row]," ",sizeof(lines[row])-strlen(lines[row])-1);
+        strncat(lines[row],text,sizeof(lines[row])-strlen(lines[row])-1);
+    } else memcpy(lines[row],text,n+1);
     for (unsigned i=0;i<n;i++) if (text[i]>' ' && text[i]<127) {
         memcpy(framebuffer[row]+start+i*width,gFontBig[text[i]-' '-1],7);
         memcpy(framebuffer[row+1]+start+i*width,gFontBig[text[i]-' '-1]+7,7);
@@ -33,7 +36,10 @@ void UI_PrintStringSmallNormal(const char *text,uint8_t start,uint8_t end,uint8_
         start+=(end-start-n*7+1)/2;
     }
     if (row>=7 || start+n*7>128 || n>=sizeof(lines[0])) { overflow++; return; }
-    memcpy(lines[row],text,n+1);
+    if (lines[row][0]) {
+        strncat(lines[row]," ",sizeof(lines[row])-strlen(lines[row])-1);
+        strncat(lines[row],text,sizeof(lines[row])-strlen(lines[row])-1);
+    } else memcpy(lines[row],text,n+1);
     for (unsigned i=0;i<n;i++) if (text[i]>' ' && text[i]<127)
         memcpy(framebuffer[row]+start+i*7+1,gFontSmall[text[i]-' '-1],6);
 }

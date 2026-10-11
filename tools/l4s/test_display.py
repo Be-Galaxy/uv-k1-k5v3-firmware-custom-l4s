@@ -1,7 +1,7 @@
 import ctypes
 import struct
 import unittest
-from protocol import body, OPEN, MODE, PAIR, PTT, CW, STOP, CONTEXT
+from protocol import body, OPEN, MODE, PAIR, PTT, CW, STOP, CONTEXT, TONE
 from simulator import Firmware
 
 class DisplayTest(unittest.TestCase):
@@ -30,8 +30,8 @@ class DisplayTest(unittest.TestCase):
         lines=self.render()
         self.assertEqual('RX 435.10001',lines[2])
         self.assertEqual('TX 145.90000',lines[4])
-        self.assertIn('TRACKING',lines[6])
-        self.assertIn('EXIT',lines[6])
+        self.assertIn('FM',lines[0])
+        self.assertIn('MENU',lines[6])
 
     def test_voice_tx_hold_rejects_retune_and_keeps_displayed_pair(self):
         self.send(MODE,b'\0\0\0');self.pair()
@@ -59,13 +59,13 @@ class DisplayTest(unittest.TestCase):
     def test_physical_ptt_has_its_own_source_label(self):
         self.send(MODE,b'\0\0\0');self.pair()
         self.assertEqual(0,self.fw.lib.Host_LocalPtt(1,10))
-        self.assertEqual('LOCAL TX HOLD EXIT',self.render()[6])
+        self.assertIn('HOLD',self.render()[6])
 
     def test_satellite_live_context_and_below_horizon_elevation(self):
         self.pair()
         self.send(CONTEXT,struct.pack('<Hh16s',1370,-340,b'DOSAAF-85'))
         lines=self.render()
-        self.assertEqual('DOSAAF-85',lines[0])
+        self.assertEqual('DOSAAF-85 FM',lines[0])
         self.assertEqual('Az:137 El:-34',lines[1])
         self.send(CONTEXT,struct.pack('<Hh16s',3599,900,b'ABCDEFGHIJKLMNOP'))
         self.render()  # Longest name / angular extrema remain inside the LCD.
@@ -76,11 +76,30 @@ class DisplayTest(unittest.TestCase):
         writes=self.fw.lib.Host_Writes()
         self.assertEqual(0,self.send(CONTEXT,struct.pack('<Hh16s',1000,200,b'ISS'))[5])
         self.assertEqual(writes,self.fw.lib.Host_Writes())
-        self.assertEqual('LOCAL TX HOLD EXIT',self.render()[6])
+        self.assertIn('HOLD',self.render()[6])
 
     def test_invalid_context_does_not_replace_valid_display(self):
         self.send(CONTEXT,struct.pack('<Hh16s',1000,200,b'ISS'))
         self.assertEqual(5,self.send(CONTEXT,struct.pack('<Hh16s',3600,200,b'BAD'))[5])
-        self.assertEqual('ISS',self.render()[0])
+        self.assertEqual('ISS FM',self.render()[0])
+
+    def test_mode_and_ctcss_remain_visible_before_transmission(self):
+        self.send(MODE,b'\0\0\0');self.pair()
+        self.send(TONE,struct.pack('<H',670))
+        self.assertIn('FM',self.render()[0])
+        self.assertIn('T67.0',self.render()[6])
+        self.send(MODE,b'\3\3\0')
+        self.assertIn('CW',self.render()[0])
+        self.assertIn('Toff Roff',self.render()[6])
+
+    def test_menu_pages_are_bounded_and_have_power_mode_tone_cw_entries(self):
+        self.lib=self.fw.lib
+        self.lib.Host_MenuOpen()
+        first=self.render()
+        self.assertIn('MODE',first[1]);self.assertIn('POWER',first[2]);self.assertIn('TX CTCSS',first[3])
+        for _ in range(5):self.lib.Host_MenuKey(12)
+        second=self.render()
+        self.assertIn('ARM NEXT',second[1]);self.assertIn('CW WPM',second[2]);self.assertIn('CW TONE',second[3])
+        self.assertIn('CW VOLUME',second[4]);self.assertIn('APPLY + SAVE',second[5])
 
 if __name__=='__main__': unittest.main()
