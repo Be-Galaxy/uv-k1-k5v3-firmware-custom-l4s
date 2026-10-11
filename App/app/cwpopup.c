@@ -24,40 +24,57 @@
 #include "ui/ui.h"
 
 #define CW_POPUP_SHOW_10MS     200  // 2 s after the last key press
-#define CW_POPUP_CONFIRM_10MS  500  // 5 s to confirm a key input with MENU before it's dropped
+#define CW_POPUP_CONFIRM_10MS  500  // 5 s to confirm a keyer mode or key input with MENU before it's dropped
 #define CW_WPM_MIN             10   // same range as the CWwpm menu
 #define CW_WPM_MAX             45
 
 static CW_PopupKind_t s_kind;
 static uint16_t       s_10ms;           // idle time left, counted on the 10 ms tick so it's exact
-static uint8_t        s_key_input;      // input index shown while the key input popup is up
+static uint8_t        s_pending;        // keyer mode or key input index shown, applied only on MENU
 static bool           s_speed_changed;  // saved once on close instead of on every step
+
+// Keyer mode and key input pick from a list like the menu does: nothing applies until MENU
+static bool IsPending(CW_PopupKind_t kind)
+{
+	return kind == CW_POPUP_KEYER_MODE || kind == CW_POPUP_KEY_INPUT;
+}
+
+static void ApplyKeyerMode(void)
+{
+	if (s_pending == gEeprom.CW_KEYER_MODE)
+		return;
+
+	gEeprom.CW_KEYER_MODE = s_pending;
+	CW_KeyerResetRuntime();  // avoid stale squeeze/tracker state bleeding across mode switch
+	gRequestSaveSettings = true;
+}
 
 static void ApplyKeyInput(void)
 {
-	if (s_key_input == gEeprom.CW_KEY_INPUT_MENU)
+	if (s_pending == gEeprom.CW_KEY_INPUT_MENU)
 		return;
 
-	const uint8_t mode = CW_KEY_INPUT_menu_to_bitmap[s_key_input];
+	const uint8_t mode = CW_KEY_INPUT_menu_to_bitmap[s_pending];
 
 	gFlagReconfigureVfos = true;
 	gRequestSaveSettings = true;
 
 	if (CW_CheckKeyerInputs(mode)) {
 		gEeprom.CW_KEY_INPUT      = mode;
-		gEeprom.CW_KEY_INPUT_MENU = s_key_input;
+		gEeprom.CW_KEY_INPUT_MENU = s_pending;
 		return;
 	}
 
 	// same fallback as the menu: a stuck key leaves the radio on the PTT handkey
 	gEeprom.CW_KEY_INPUT      = CW_KEY_INPUT_HANDKEY;
 	gEeprom.CW_KEY_INPUT_MENU = 0;
-	s_key_input = 0;
+	s_pending = 0;
 	CW_Popup_Show(CW_POPUP_KEY_STUCK);
 }
 
 // A new speed is already live, so it's kept (and saved) however the popup closes. A
-// pending key input is applied only on confirm, which is MENU; everything else drops it.
+// pending keyer mode or key input is applied only on confirm, which is MENU; everything
+// else drops it.
 static void Close(bool confirm)
 {
 	const CW_PopupKind_t kind = s_kind;
@@ -71,19 +88,24 @@ static void Close(bool confirm)
 		gRequestSaveSettings = true;
 	}
 
-	if (kind == CW_POPUP_KEY_INPUT && confirm)
+	if (!confirm)
+		return;
+
+	if (kind == CW_POPUP_KEYER_MODE)
+		ApplyKeyerMode();
+	else if (kind == CW_POPUP_KEY_INPUT)
 		ApplyKeyInput();  // may reopen as CW_POPUP_KEY_STUCK
 }
 
 // Also restarts the idle time of the popup already showing
 void CW_Popup_Show(CW_PopupKind_t kind)
 {
-	// switching to a different popup drops a pending key input
+	// switching to a different popup drops a pending choice
 	if (s_kind != CW_POPUP_NONE && s_kind != kind)
 		Close(false);
 
 	s_kind = kind;
-	s_10ms = (kind == CW_POPUP_KEY_INPUT) ? CW_POPUP_CONFIRM_10MS : CW_POPUP_SHOW_10MS;
+	s_10ms = IsPending(kind) ? CW_POPUP_CONFIRM_10MS : CW_POPUP_SHOW_10MS;
 	gUpdateDisplay = true;
 }
 
@@ -98,9 +120,9 @@ CW_PopupKind_t CW_Popup_Kind(void)
 	return s_kind;
 }
 
-uint8_t CW_Popup_KeyInput(void)
+uint8_t CW_Popup_Pending(void)
 {
-	return s_key_input;
+	return s_pending;
 }
 
 void CW_Popup_Speed(void)
@@ -127,12 +149,13 @@ static void StepSpeed(int8_t direction)
 	s_speed_changed = true;
 }
 
-// Move the pending key input one place through the CWkey menu's list, wrapping
-static void StepKeyInput(int8_t direction)
+// Move the pending choice one place through its menu's list (CWkmod or CWkey), wrapping
+static void StepPending(int8_t direction)
 {
-	const uint8_t count = ARRAY_SIZE(CW_KEY_INPUT_menu_to_bitmap);
+	const uint8_t count = (s_kind == CW_POPUP_KEYER_MODE) ? CW_IAMBIC_MODE_BUG + 1
+	                                                      : ARRAY_SIZE(CW_KEY_INPUT_menu_to_bitmap);
 
-	s_key_input = (uint8_t)((s_key_input + count + direction) % count);
+	s_pending = (uint8_t)((s_pending + count + direction) % count);
 }
 
 // Up/down as +1/-1, flipped like the menu and dial when SetNav is off
@@ -143,20 +166,31 @@ static int8_t KeyDirection(KEY_Code_t Key)
 	return gEeprom.SET_NAV ? direction : -direction;
 }
 
-void CW_Popup_StepKeyInput(void)
+// The first press shows the current value, later presses step it
+static void OpenOrStep(CW_PopupKind_t kind, uint8_t current)
 {
-	if (s_kind != CW_POPUP_KEY_INPUT) {
-		if (gScreenToDisplay != DISPLAY_MAIN) {
-			CW_ErrorBeep();  // nowhere to show the pending choice
-			return;
-		}
-		s_key_input = gEeprom.CW_KEY_INPUT_MENU;
+	if (s_kind == kind) {
+		StepPending(1);
+	}
+	else if (gScreenToDisplay != DISPLAY_MAIN) {
+		CW_ErrorBeep();  // nowhere to show the pending choice
+		return;
 	}
 	else {
-		StepKeyInput(1);
+		s_pending = current;
 	}
 
-	CW_Popup_Show(CW_POPUP_KEY_INPUT);
+	CW_Popup_Show(kind);
+}
+
+void CW_Popup_StepKeyerMode(void)
+{
+	OpenOrStep(CW_POPUP_KEYER_MODE, gEeprom.CW_KEYER_MODE);
+}
+
+void CW_Popup_StepKeyInput(void)
+{
+	OpenOrStep(CW_POPUP_KEY_INPUT, gEeprom.CW_KEY_INPUT_MENU);
 }
 
 bool CW_Popup_ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
@@ -173,18 +207,18 @@ bool CW_Popup_ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 		return true;
 	}
 
-	if ((s_kind == CW_POPUP_SPEED || s_kind == CW_POPUP_KEY_INPUT) && (Key == KEY_UP || Key == KEY_DOWN)) {
+	if ((s_kind == CW_POPUP_SPEED || IsPending(s_kind)) && (Key == KEY_UP || Key == KEY_DOWN)) {
 		if (bKeyPressed) {  // first press and every auto-repeat while held
 			if (s_kind == CW_POPUP_SPEED)
 				StepSpeed(KeyDirection(Key));
 			else
-				StepKeyInput(KeyDirection(Key));
+				StepPending(KeyDirection(Key));
 			CW_Popup_Show(s_kind);
 		}
 		return true;
 	}
 
-	// any other key closes the popup, dropping a pending key input, then does its usual job
+	// any other key closes the popup, dropping a pending choice, then does its usual job
 	if (bKeyPressed && !bKeyHeld)
 		Close(false);
 
@@ -203,8 +237,8 @@ void CW_Popup_OnAction(uint8_t action)
 
 void CW_Popup_OnKeying(void)
 {
-	// keying keeps a new speed and drops a pending key input, since keying means the
-	// current input is the one in use (and a pressed key would fail its check)
+	// keying keeps a new speed and drops a pending keyer mode or key input, since keying
+	// means the current ones are in use (and a pressed key would fail the input's check)
 	if (s_kind != CW_POPUP_NONE)
 		Close(false);
 }

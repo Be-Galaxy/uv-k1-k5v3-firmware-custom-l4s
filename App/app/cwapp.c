@@ -141,8 +141,9 @@ void CW_AppUpdate(void)
 		CW_Popup_Show(CW_POPUP_TX_TIMEOUT);  // keep saying so until the key is released
 	}
 
-	// keying confirms and closes a settings popup or RIT/XIT adjust (break-in off never
-	// enters TX). An error-beep dit answers a key press in them, so it leaves them up.
+	// keying closes a settings popup, dropping an unconfirmed choice, or RIT/XIT adjust
+	// (break-in off never enters TX). An error-beep dit answers a key press in them, so
+	// it leaves them up.
 	if (action == CW_ACTION_CARRIER_ON && !cue) {
 		CW_Popup_OnKeying();
 		CW_RIT_OnKeying();
@@ -177,7 +178,7 @@ void CW_AppUpdate(void)
 				// gain before ALAM, so the tone path never opens at RX's DAC gain
 				CW_ApplySidetoneGain();
 				BK4819_SetAF(BK4819_AF_ALAM);
-				BK4819_SetScrambleFrequencyControlWord(gEeprom.CW_TONE_FREQUENCY * 10);
+				BK4819_SetScrambleFrequencyControlWord(cue ? CW_ERROR_TONE_HZ : gEeprom.CW_TONE_FREQUENCY * 10);
 				#ifdef ENABLE_FLASHLIGHT
 				if (gCW_FlashlightSending) {
 					GPIO_SetOutputPin(GPIO_PIN_FLASHLIGHT);

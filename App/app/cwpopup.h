@@ -14,9 +14,10 @@
  *     limitations under the License.
  */
 
-// CW quick-settings popup on the main screen. It shows the setting a key action just
-// changed, and for speed and key input it stays interactive while it is up. Any key
-// other than MENU, EXIT and up/down closes it and then does its usual job.
+// CW quick-settings popup on the main screen. Keyer mode and key input work like the
+// menu: the action shows the current value, pressing it again or up/down steps it, and
+// only MENU applies it. Speed changes live with up/down. Any key other than MENU, EXIT
+// and up/down closes it and then does its usual job.
 
 #ifndef APP_CWPOPUP_H
 #define APP_CWPOPUP_H
@@ -28,9 +29,9 @@
 
 typedef enum {
 	CW_POPUP_NONE = 0,
-	CW_POPUP_KEYER_MODE,
+	CW_POPUP_KEYER_MODE,   // up/down or the action step a pending mode; only MENU applies it, 5 s idle drops it
 	CW_POPUP_SPEED,        // up/down change WPM live; the new speed stays however the popup closes
-	CW_POPUP_KEY_INPUT,    // up/down or the action step a pending input; only MENU applies it, 5 s idle drops it
+	CW_POPUP_KEY_INPUT,    // same as keyer mode, for the key input
 	CW_POPUP_KEY_STUCK,    // the pending input failed the stuck-key check
 	CW_POPUP_TX_TIMEOUT,   // a stuck key tripped the transmit timeout
 } CW_PopupKind_t;
@@ -38,11 +39,12 @@ typedef enum {
 void           CW_Popup_Show(CW_PopupKind_t kind);
 void           CW_Popup_Dismiss(CW_PopupKind_t kind);  // close it if that kind is showing
 CW_PopupKind_t CW_Popup_Kind(void);
-uint8_t        CW_Popup_KeyInput(void);  // key input index the popup is showing
+uint8_t        CW_Popup_Pending(void);  // keyer mode or key input index the popup is showing
 
 // Key actions
-void CW_Popup_Speed(void);         // open speed adjust, or close it when already open
-void CW_Popup_StepKeyInput(void);  // first press shows the current input, later presses step it
+void CW_Popup_Speed(void);          // open speed adjust, or close it when already open
+void CW_Popup_StepKeyerMode(void);  // first press shows the current mode, later presses step it
+void CW_Popup_StepKeyInput(void);   // first press shows the current input, later presses step it
 
 bool CW_Popup_ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);  // true when the key was used
 void CW_Popup_OnAction(uint8_t action);  // a side key action is about to run

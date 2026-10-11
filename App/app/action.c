@@ -85,7 +85,6 @@ static void ACTION_RepeatCWMsg1(void);
 static void ACTION_RepeatCWMsg2(void);
 static void ACTION_RepeatCWMsg3(void);
 static void ACTION_RepeatCWMsg4(void);
-static void ACTION_CWKeyerMode(void);
 static void ACTION_CWProperRoger(void);
 static void ACTION_CWBreakIn(void);
 #ifdef ENABLE_CODE_PRACTICE
@@ -151,7 +150,7 @@ void (*const action_opt_table[])(void) = {
     #ifdef ENABLE_CODE_PRACTICE
     [ACTION_OPT_CPO] = &ACTION_CPO,
 	#endif
-	[ACTION_OPT_CW_KEYER_MODE] = &ACTION_CWKeyerMode,
+	[ACTION_OPT_CW_KEYER_MODE] = &CW_Popup_StepKeyerMode,
 	[ACTION_OPT_CW_PROPER_ROGER] = &ACTION_CWProperRoger,
 	[ACTION_OPT_CW_SPEED] = &CW_Popup_Speed,
 	[ACTION_OPT_CW_KEY_INPUT] = &CW_Popup_StepKeyInput,
@@ -750,20 +749,6 @@ static void ACTION_RepeatCWMsg3(void)
 static void ACTION_RepeatCWMsg4(void)
 {
 	CW_StartMacroPlayback(3, true);
-}
-
-// Cycle Iambic A -> Iambic B -> Ultimatic -> Bug, same effect as the CWkmod menu
-static void ACTION_CWKeyerMode(void)
-{
-	if (gEeprom.CW_KEYER_MODE >= CW_IAMBIC_MODE_BUG)
-		gEeprom.CW_KEYER_MODE = CW_IAMBIC_MODE_A;
-	else
-		gEeprom.CW_KEYER_MODE++;
-
-	CW_KeyerResetRuntime();  // avoid stale squeeze/tracker state bleeding across mode switch
-	gRequestSaveSettings = true;
-
-	CW_Popup_Show(CW_POPUP_KEYER_MODE);
 }
 
 // Same toggle as F+7 in CW; the status bar icon shows the new state

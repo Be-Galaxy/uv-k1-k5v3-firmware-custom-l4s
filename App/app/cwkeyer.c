@@ -56,6 +56,10 @@
 #define TICKS_PER_MS 1
 #define TICKS_PER_MINUTE (60 * 1000 * TICKS_PER_MS)  // 60,000
 
+// CW_ErrorBeep's dit runs at 20 WPM whatever the keyer speed: 60 ms, then a 180 ms
+// char gap before another can start
+#define CW_ERROR_DIT_TICKS (TICKS_PER_MINUTE / (20 * DITS_PER_WORD))
+
 // Keyer FSM states
 typedef enum {
     CWK_STATE_IDLE = 0,
@@ -427,7 +431,7 @@ void CW_ErrorBeep(void)
     s_play_cue = true;
 
     // skip the char-gap lead-in so the dit answers the key press right away
-    s_elem_start_count = millis() - s_char_gap_count;
+    s_elem_start_count = millis() - 3U * CW_ERROR_DIT_TICKS;
 }
 
 bool CW_PlaybackIsCue(void)
@@ -474,7 +478,8 @@ CW_Action_t CW_PlaybackHandleState(void)
 
     switch (s_pb_state) {
     case PB_STATE_ACTIVE_ELEMENT: {
-        const uint32_t target = s_active_is_dit ? s_dit_count
+        const uint32_t target = s_play_cue      ? CW_ERROR_DIT_TICKS
+                              : s_active_is_dit ? s_dit_count
                               : s_play_long_dah ? gEeprom.CW_ROGER_DAH_DITS * (uint32_t)s_dit_count
                               : s_dah_count;
         const uint32_t elapsed = millis_since(s_elem_start_count);
@@ -516,8 +521,9 @@ CW_Action_t CW_PlaybackHandleState(void)
     }
 
     case PB_STATE_INTER_CHAR_GAP: {
-        const uint32_t elapsed = millis_since(s_elem_start_count);
-        if (elapsed < s_play_char_gap_count) {
+        const uint32_t elapsed  = millis_since(s_elem_start_count);
+        const uint32_t char_gap = s_play_cue ? 3U * CW_ERROR_DIT_TICKS : s_play_char_gap_count;
+        if (elapsed < char_gap) {
             return CW_ACTION_NONE;
         }
         // Move to next character (if any)

@@ -818,7 +818,7 @@ KEYACTIONS_LIST = ["NONE",
                    "RX MODE",
                    "MAIN ONLY", 
                    "PTT",                  
-                   "WIDE / NARROW",
+                   "FILTER WIDTH",
                    "BACKLIGHT",
                    "MUTE",
                    "RxA",
@@ -935,7 +935,7 @@ _NR7Y_ACTIONS_COMMON = [
     "RX MODE",         # 14: ACTION_OPT_RXMODE
     "MAIN ONLY",       # 15: ACTION_OPT_MAINONLY
     "PTT",             # 16: ACTION_OPT_PTT
-    "WIDE / NARROW",   # 17: ACTION_OPT_WN
+    "FILTER WIDTH",    # 17: ACTION_OPT_WN
     "BACKLIGHT",       # 18: ACTION_OPT_BACKLIGHT
     "MUTE",            # 19: ACTION_OPT_MUTE
     "RxA",             # 20: ACTION_OPT_RXA
