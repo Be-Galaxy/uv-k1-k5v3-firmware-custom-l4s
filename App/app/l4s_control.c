@@ -326,6 +326,9 @@ static const L4S_Ops ops={enter,leave,validate_pair,apply_pair,set_mode,tone,ptt
 void L4S_ControlTick(void)
 {
     if (!initialized) { L4S_Init(&state,&ops);L4S_StoreInit(&store,&store_ops);initialized=true; }
+    /* Expire the session before a flash commit or a newly pressed local PTT. */
+    if(usb_lost) {L4S_Abort(&state,L4S_CANCELLED);usb_lost=false;}
+    L4S_Tick(&state,millis());
     L4S_StoreTick(&store,millis());
     if(store.phase==L4S_STORE_DONE && !completion_handled && !GPIO_IsPttPressed() && can_retune()) {
         if(state.session) {
@@ -340,6 +343,7 @@ void L4S_ControlTick(void)
                 state.rx_mode=current.mode==0 || current.mode==3 ? L4S_FM : current.mode==1 ? L4S_CW_MODE : L4S_USB;
                 state.tx_mode=current.mode==0 || current.mode==3 ? L4S_FM : L4S_CW_MODE;
                 state.pair_ready=false;state.mode_ready=found;
+                state.arm_next=local_save_pending && menu.arm_next;
                 if(!found)state.applied.tx_enabled=false;
                 menu.open=false;state.menu_open=false;gUpdateDisplay=true;
             }
@@ -354,9 +358,7 @@ void L4S_ControlTick(void)
     if (state.session) {
         const bool timed_out = state.tx_window_open && (uint32_t)(millis()-state.tx_started) >=
             ((uint32_t)gEeprom.TX_TIMEOUT_TIMER+1)*5000u;
-        if (usb_lost) {
-            L4S_Abort(&state,L4S_CANCELLED); usb_lost=false;
-        } else if (timed_out) {
+        if (timed_out) {
             L4S_StopTx(&state,L4S_TIMEOUT);
         }
         const bool physical=GPIO_IsPttPressed();
@@ -434,7 +436,10 @@ bool L4S_HandleUart(uint32_t port, const uint8_t *body, size_t size)
     uint16_t cmd=size>=2 ? L4S_Read16(body) : 0;
     if (cmd<L4S_HELLO || cmd>L4S_PROFILE_STORE) {
         if(L4S_StoreBusy(&store))return true;
-        if (L4S_Active()) L4S_Abort(&state,L4S_CANCELLED);
+        if (L4S_Active()) {
+            if(port!=UART_PORT_VCP)return true;
+            L4S_Abort(&state,L4S_CANCELLED);
+        }
         return false;
     }
     if (port!=UART_PORT_VCP) return true;

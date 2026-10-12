@@ -231,7 +231,7 @@
             "cacheVariables": {
                 "ENABLE_L4S_CONTROL": true,
                 "EDITION_STRING": "L4S Control",
-                "VERSION_STRING_2": "L4S-v1-alpha7",
+                "VERSION_STRING_2": "L4S-v1-alpha7.1",
                 "TARGET": "l4s.control"
             }
         },

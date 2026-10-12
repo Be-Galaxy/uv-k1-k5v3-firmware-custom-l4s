@@ -63,6 +63,7 @@ void L4S_StopTx(L4S_State *s, uint8_t reason) { stop(s,reason); }
 
 uint8_t L4S_LocalPtt(L4S_State *s, bool pressed, uint32_t now)
 {
+    L4S_Tick(s,now);
     if (!s->session) return L4S_BAD_SESSION;
     if (!pressed) {
         if (s->owner==L4S_TX_LOCAL) stop(s,0);
@@ -173,7 +174,9 @@ static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
         uint32_t revision = s->applied.revision;
         if ((int32_t)(pair.revision - revision) <= 0) return L4S_STALE;
         if (!s->ops->validate_pair(&pair)) return L4S_RANGE;
-        if (!s->ops->apply_pair(&pair)) return L4S_TX_REJECTED;
+        const bool unchanged=s->pair_ready && pair.rx_hz==s->applied.rx_hz &&
+            pair.tx_hz==s->applied.tx_hz && pair.tx_enabled==s->applied.tx_enabled;
+        if (!unchanged && !s->ops->apply_pair(&pair)) return L4S_TX_REJECTED;
         s->applied = pair; s->pair_ready = true;
         s->error=0;
         return L4S_APPLIED;
@@ -268,7 +271,8 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
         L4S_Write32(p+16,18000000u); L4S_Write32(p+20,1300000000u);
         memset(p+24,0,16);
 #ifdef VERSION_STRING_2
-        strncpy((char *)p+24,VERSION_STRING_2,15);
+        const size_t version_length=sizeof(VERSION_STRING_2)-1;
+        memcpy(p+24,VERSION_STRING_2,version_length>15 ? 15 : version_length);
 #else
         memcpy(p+24,"L4S host-v1",11);
 #endif

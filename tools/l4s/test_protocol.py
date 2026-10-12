@@ -38,6 +38,22 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(0,struct.unpack_from('<I',reply,8)[0])
         self.assertEqual(0,reply[31])
 
+    def test_expired_session_cannot_start_physical_ptt_before_next_poll(self):
+        self.ready()
+        self.assertEqual(3,self.fw.lib.Host_LocalPtt(1,self.now+1500))
+        self.assertEqual(0,self.fw.lib.Host_Starts())
+        self.assertEqual(1,self.fw.lib.Host_Leaves())
+
+    def test_heartbeat_deadline_handles_millisecond_wrap(self):
+        self.now=0xfffffff0
+        self.fw.lib.Host_Reset()
+        self.send(OPEN)
+        self.ready()
+        self.fw.lib.Host_Tick((self.now+1499)&0xffffffff)
+        self.assertEqual(0,self.fw.lib.Host_Leaves())
+        self.fw.lib.Host_Tick((self.now+1500)&0xffffffff)
+        self.assertEqual(1,self.fw.lib.Host_Leaves())
+
     def setUp(self):
         self.fw = Firmware()
         self.seq = 1
@@ -104,6 +120,18 @@ class ProtocolTest(unittest.TestCase):
         self.ready()
         self.assertEqual(10, self.send(PTT, b'\1'+struct.pack('<I', 99))[5])
         self.assertEqual(0, self.send(PTT, b'\1'+struct.pack('<I', 1))[5])
+
+    def test_unchanged_quantized_pair_does_not_restart_receive_but_stop_reapplies(self):
+        self.ready()
+        writes=self.fw.lib.Host_Writes()
+        reply=self.pair(2,rx=435100004,tx=145900004)
+        self.assertEqual(0,reply[5])
+        self.assertEqual(2,Snapshot.parse(reply).revision)
+        self.assertEqual(writes,self.fw.lib.Host_Writes())
+        self.send(STOP)
+        self.assertEqual(0,self.pair(3)[5])
+        self.assertEqual(writes+1,self.fw.lib.Host_Writes())
+        self.assertEqual(0,self.send(PTT,b'\1'+struct.pack('<I',3))[5])
 
     def test_duplicate_ptt_and_cw_are_not_replayed(self):
         self.ready()

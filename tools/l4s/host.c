@@ -77,6 +77,7 @@ void Host_StoreEnsure(void);
 EXPORT void Host_Reset(void) { Host_StoreEnsure();tx=progress=0;active=denied=false;starts=leaves=writes=0;clock_ms=0;key_latch=false;memset(&menu,0,sizeof(menu));L4S_Init(&state,&ops);observed_store_generation=L4S_GetStore()->generation; }
 EXPORT void Host_Tick(uint32_t now) {
     clock_ms=now;
+    L4S_Tick(&state,now);
     Host_StoreTick(now);state.store_busy=L4S_StoreBusy(L4S_GetStore());
     if(L4S_GetStore()->generation!=observed_store_generation) {
         observed_store_generation=L4S_GetStore()->generation;state.pair_ready=false;

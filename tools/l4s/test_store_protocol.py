@@ -2,6 +2,8 @@ import struct
 import unittest
 from simulator import Firmware
 from protocol import body, OPEN, CLOSE, HELLO, MODE, PAIR, PTT, STATUS, PROFILE, PROFILE_STORE
+from test_io import Config
+import ctypes
 
 class StoreProtocolTest(unittest.TestCase):
     def setUp(self):
@@ -39,5 +41,23 @@ class StoreProtocolTest(unittest.TestCase):
         self.assertEqual(0,self.fw.lib.Host_StoreGeneration())
         self.assertEqual(0,self.send(OPEN,session=456)[5])
         self.assertEqual(10,self.send(PTT,b'\1'+struct.pack('<I',1),session=456)[5])
+
+    def test_timeout_preempts_the_final_flash_commit(self):
+        self.fw.lib.Host_StoreUpsert.argtypes=[ctypes.c_void_p,ctypes.POINTER(Config),ctypes.c_uint32]
+        config=Config(0,3,20,60,4,1,0,4,0,435100000,145900000,0,0)
+        self.assertEqual(1,self.fw.lib.Host_StoreUpsert(bytes(range(16)),ctypes.byref(config),1))
+        for _ in range(100):
+            if self.fw.lib.Host_StorePhase()==8:
+                break
+            self.now+=1
+            self.fw.lib.Host_Tick(self.now)
+        else:
+            self.fail('transaction did not reach pre-commit')
+        self.fw.lib.Host_Tick(1510)
+        self.assertEqual(10,self.fw.lib.Host_StorePhase())
+        self.assertEqual(0,self.fw.lib.Host_StoreGeneration())
+        self.assertEqual(1,self.fw.lib.Host_Leaves())
+        self.fw.lib.Host_StoreRestart()
+        self.assertEqual(0,self.fw.lib.Host_StoreGeneration())
 
 if __name__=='__main__':unittest.main()
