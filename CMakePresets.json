@@ -245,6 +245,7 @@
                 "ENABLE_FEAT_F4HWN_MENU_CAT": true,
                 "ENABLE_FEAT_F4HWN_ACTION_PICKER": true,
                 "ENABLE_FEAT_F4HWN_FOXHUNT": true,
+                "ENABLE_FEAT_F4HWN_LOGO": true,
                 "ENABLE_SWD": false,
                 "ENABLE_TX_WHEN_AM": true,
                 "ENABLE_F_CAL_MENU": true,

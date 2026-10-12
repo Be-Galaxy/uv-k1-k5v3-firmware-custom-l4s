@@ -960,6 +960,17 @@ static void DrawCWPopupArrow(uint8_t x, uint8_t y, int8_t dx, int8_t dy)
 			UI_DrawPixelBuffer(gFrameBuffer, x - depth * dx + side * dy, y - depth * dy + side * dx, true);
 }
 
+// Lift the popup's title row (line 2, inside the box) n pixels into line 1, under the
+// box's top border at row 9, to open a gap above the value
+static void RaiseCWPopupTitle(uint8_t n)
+{
+	for (uint8_t x = 9; x < 119; x++) {
+		const uint16_t column = (uint16_t)gFrameBuffer[2][x] << (8 - n);
+		gFrameBuffer[1][x] |= column & 0xFF;
+		gFrameBuffer[2][x]  = column >> 8;
+	}
+}
+
 // Boxed popup over the middle of the main screen for the CW setting a key action opened.
 // Covers lines 1-5 between x=7 and x=120, clear of the RX blink marker at x=0-6.
 static void DrawCWPopup(void)
@@ -1004,41 +1015,33 @@ static void DrawCWPopup(void)
 	UI_DrawRectangleBuffer(gFrameBuffer, 8, 9, 119, 46, true);
 	UI_PrintStringSmallBold(title, 9, 118, 2);
 
+	// A keyer mode or key input change only happens on MENU, so the title carries an M
+	// and the confirm mark at the left end, over the MENU key on both radios
+	if (kind == CW_POPUP_KEYER_MODE || kind == CW_POPUP_KEY_INPUT) {
+		UI_PrintStringSmallNormal("M", 11, 0, 2);  // drawn at x 12-17
+		memcpy(gFrameBuffer[2] + 20, BITMAP_Confirm, sizeof(BITMAP_Confirm));
+	}
+
+	RaiseCWPopupTitle(3);
+
 	if (text)
 		UI_PrintString(text, 9, 118, 3, 8);
 	else
 		DrawCWPopupKeyInput(CW_Popup_Pending());
 
-	// Each arrow sits on the side of the key that does it and is drawn the way SetNav
-	// names the keys. With UP/DOWN the left key (KEY_UP) steps up (faster, or the next
-	// mode or key input); with the UV-K1's LEFT/RIGHT it steps down. Key input names keep
-	// their wide first row clear by putting the arrows beside the second, at most 8
-	// characters; a one-line big value has them beside it.
+	// Arrows are drawn the way SetNav names the keys, in the same place for every popup
+	// that steps, low in the box and clear of the border at row 46. With UP/DOWN the up
+	// arrow (KEY_UP) steps up (faster, or the next mode or key input) and the down arrow
+	// sits under it; with the UV-K1's LEFT/RIGHT the left key steps down.
 	if (kind == CW_POPUP_KEYER_MODE || kind == CW_POPUP_SPEED || kind == CW_POPUP_KEY_INPUT) {
-		const bool big = (text != NULL);
 		if (gEeprom.SET_NAV) {
-			const uint8_t top = big ? 28 : 34;
-			DrawCWPopupArrow(17,  top,     0, -1);
-			DrawCWPopupArrow(110, top + 3, 0, 1);
+			DrawCWPopupArrow(17, 34, 0, -1);  // rows 34-37
+			DrawCWPopupArrow(17, 44, 0, 1);   // rows 41-44
 		}
 		else {
-			const uint8_t mid = big ? 31 : 35;
-			DrawCWPopupArrow(15,  mid, -1, 0);
-			DrawCWPopupArrow(112, mid, 1, 0);
+			DrawCWPopupArrow(15,  41, -1, 0);  // rows 38-44
+			DrawCWPopupArrow(112, 41, 1, 0);
 		}
-	}
-
-	// A keyer mode or key input change only happens on MENU, so the title carries the
-	// confirm mark at the left end, over MENU, and cancel at the right, over EXIT. With
-	// UP/DOWN navigation (the UV-K5) the arrows don't spell out the key row, so an M names the key.
-	if (kind == CW_POPUP_KEYER_MODE || kind == CW_POPUP_KEY_INPUT) {
-		uint8_t confirmX = 11;
-		if (gEeprom.SET_NAV) {
-			UI_PrintStringSmallNormal("M", 11, 0, 2);  // drawn at x 12-17
-			confirmX = 20;
-		}
-		memcpy(gFrameBuffer[2] + confirmX, BITMAP_Confirm, sizeof(BITMAP_Confirm));
-		memcpy(gFrameBuffer[2] + 110, BITMAP_Cancel, sizeof(BITMAP_Cancel));
 	}
 }
 
