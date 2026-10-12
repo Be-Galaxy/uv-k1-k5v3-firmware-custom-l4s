@@ -239,10 +239,9 @@ const char* const gSubMenu_SFT_D[] =
     "-"
 };
 
-// Two entries, always. Which pair applies depends on the modulation of the VFO
-// being edited - CW and SSB never use the 12.5k filter, so they get their own
-// labels. UI_MENU_FilterLabels() picks the pair; the stored value is the same
-// wide/narrow bit either way.
+// Which labels apply depends on the modulation of the VFO being edited. FM and AM
+// pick wide or narrow; CW and SSB have the one 6.25k filter, shown as the only
+// choice. UI_MENU_FilterLabels() picks the list.
 const char* const gSubMenu_W_N[] =
 {
 	"25k FM",
@@ -253,7 +252,6 @@ const char* const gSubMenu_W_N[] =
 const char* const gSubMenu_W_N_SSB[] =
 {
 	"6.25k",
-	"2.0k",
 };
 #endif
 
@@ -262,14 +260,8 @@ const char* const gSubMenu_W_N_SSB[] =
 const char* const *UI_MENU_FilterLabels(void)
 {
 #ifdef ENABLE_EXTRA_FILTER
-	if (
-	#ifdef ENABLE_CW_MODULATOR
-		gTxVfo->Modulation == MODULATION_CW ||
-	#endif
-		gTxVfo->Modulation == MODULATION_USB)
-	{
+	if (!RADIO_HasFilterChoice(gTxVfo))
 		return gSubMenu_W_N_SSB;
-	}
 #endif
 	return gSubMenu_W_N;
 }

@@ -38,8 +38,8 @@
 // Pattern: LSB first, 0=dit, 1=dah
 typedef struct {
 	char ch;
-	uint8_t length;   // Number of elements (1-7)
-	uint8_t pattern;  // Bit pattern: 0=dit, 1=dah, LSB first
+	uint8_t length;   // Number of elements (1-9)
+	uint8_t pattern;  // Bit pattern: 0=dit, 1=dah, LSB first; elements past bit 7 are dits
 } MorseCode_t;
 
 // bits in the lookup table are element-order-BACKWARDS, pop the stack.
@@ -98,17 +98,36 @@ static const MorseCode_t MORSE_TABLE[] = {
 	{CW_PROSIGN_KA, 5, 0b10101},    // -.-.-
 	{CW_PROSIGN_SN, 5, 0b01000},    // ...-.
 	{CW_PROSIGN_UR, 6, 0b010100},   // ..-.-.
+	{CW_PROSIGN_SOS, 9, 0b000111000},  // ...---... (its ninth element, a dit, is past bit 7)
 };
 
-// Each prosign's letters, in lowercase for the TX display buffer and macro preview
-static const char PROSIGN_LETTERS[][3] = {"sk", "bk", "ka", "sn", "ur"};
+// Each prosign's letters, in lowercase for the TX display buffer and macro preview.
+// No entry starts another, so a run of them splits into prosigns only one way.
+static const char PROSIGN_LETTERS[][4] = {"sk", "bk", "ka", "sn", "ur", "sos"};
+
+// Lowercase only ever comes from a prosign, whose letters always go in together
+static bool IsProsignLetter(char c)
+{
+	return c >= 'a' && c <= 'z';
+}
+
+// Number of letters of the prosign that starts at s, or 0 if none does
+static uint8_t ProsignLength(const char *s)
+{
+	for (unsigned int i = 0; i < ARRAY_SIZE(PROSIGN_LETTERS); i++) {
+		const size_t n = strlen(PROSIGN_LETTERS[i]);
+		if (strncmp(s, PROSIGN_LETTERS[i], n) == 0)
+			return (uint8_t)n;
+	}
+	return 0;
+}
 #define MORSE_TABLE_SIZE (sizeof(MORSE_TABLE) / sizeof(MORSE_TABLE[0]))
 
 // Encoder state machine
-static uint8_t s_encoder_pattern = 0;  // Accumulated pattern
+static uint16_t s_encoder_pattern = 0;  // Accumulated pattern; 16 bits so a dah in bit 8 can't pass for SOS
 static uint8_t s_encoder_length = 0;   // Number of elements in pattern
 static bool s_encoder_space_pending = false;  // Word space before next char
-static bool s_encoder_overflow = false;  // More than 7 elements sent (invalid char)
+static bool s_encoder_overflow = false;  // More than 9 elements sent (invalid char)
 
 // Recording state
 bool gCW_Recording = false;
@@ -334,14 +353,16 @@ uint8_t CW_FormatMacroDisplay(uint8_t macroIndex, char *display, uint8_t maxChar
 			display[outPos++] = ' ';
 			dispCount++;
 		}
-		// Add character if room; a prosign takes two places
+		// Add character if room; a prosign takes a place per letter
 		const char ch = CW_MACRO_GET_CHAR(data[i]);
 		if (CW_IS_PROSIGN(ch)) {
-			if (dispCount + 2 > 9)
+			const char   *letters = PROSIGN_LETTERS[ch - CW_PROSIGN_SK];
+			const uint8_t n       = (uint8_t)strlen(letters);
+			if (dispCount + n > 9)
 				break;
-			display[outPos++] = PROSIGN_LETTERS[ch - CW_PROSIGN_SK][0];
-			display[outPos++] = PROSIGN_LETTERS[ch - CW_PROSIGN_SK][1];
-			dispCount += 2;
+			memcpy(display + outPos, letters, n);
+			outPos += n;
+			dispCount += n;
 		} else if (dispCount < 9) {
 			display[outPos++] = ch;
 			dispCount++;
@@ -355,9 +376,9 @@ uint8_t CW_FormatMacroDisplay(uint8_t macroIndex, char *display, uint8_t maxChar
 }
 
 // Decode accumulated pattern into a character
-static char CW_DecodePattern(uint8_t pattern, uint8_t length)
+static char CW_DecodePattern(uint16_t pattern, uint8_t length)
 {
-	if (length == 0 || length > 7)
+	if (length == 0 || length > 9)
 		return 0;
 	
 	for (unsigned int i = 0; i < MORSE_TABLE_SIZE; i++) {
@@ -398,8 +419,8 @@ void CW_EncoderProcessElement(CW_ElementType_t element)
 
 	switch (element) {
 	case CW_ELEMENT_DIT:
-		// Add a dit (0) to the pattern; 7 elements is the longest character (BK)
-		if (s_encoder_length < 7) {
+		// Add a dit (0) to the pattern; 9 elements is the longest character (SOS)
+		if (s_encoder_length < 9) {
 			// Pattern LSB first, so no shift needed for new bit
 			s_encoder_length++;
 		} else {
@@ -409,8 +430,8 @@ void CW_EncoderProcessElement(CW_ElementType_t element)
 
 	case CW_ELEMENT_DAH:
 		// Add a dah (1) to the pattern
-		if (s_encoder_length < 7) {
-			s_encoder_pattern |= (1 << s_encoder_length);
+		if (s_encoder_length < 9) {
+			s_encoder_pattern |= (uint16_t)(1u << s_encoder_length);
 			s_encoder_length++;
 		} else {
 			s_encoder_overflow = true;
@@ -464,8 +485,8 @@ void CW_EncoderProcessElement(CW_ElementType_t element)
 			}
 #ifdef ENABLE_CODE_PRACTICE
 			else if (gCW_CpoActive) {
-				// An unknown pattern, or a run past 7 elements (a held paddle, the 8-dit
-				// error signal), is dropped everywhere else. Practice shows it so a
+				// An unknown pattern (such as the 8-dit error signal), or a run past 9
+				// elements (a held paddle), is dropped everywhere else. Practice shows it so a
 				// fumble can't pass unseen, and the callsign drill scores it as a miss.
 				CW_AddToTxDisplay(CW_CHAR_UNKNOWN, s_encoder_space_pending);
 				CPO_Call_OnChar(CW_CHAR_UNKNOWN);
@@ -534,12 +555,27 @@ void CW_StopRecording(void)
 	CW_ClearTxDisplay();
 }
 
+// When the buffer is full, drop the oldest character to make room for one more. A
+// prosign at the start goes as a whole, so part of it is never left behind.
+static void MakeRoom(void)
+{
+	if (gCW_TX_DisplayIndex < CW_TX_DISPLAY_SIZE - 1)
+		return;
+
+	const uint8_t prosign = ProsignLength(gCW_TX_Display);
+	const uint8_t drop    = prosign ? prosign : 1;
+	memmove(gCW_TX_Display, gCW_TX_Display + drop, CW_TX_DISPLAY_SIZE - 1 - drop);
+	gCW_TX_DisplayIndex = CW_TX_DISPLAY_SIZE - 1 - drop;
+}
+
 void CW_AddToTxDisplay(char ch, bool hasSpace)
 {
 	if (CW_IS_PROSIGN(ch)) {
-		// its two letters in lowercase, which the CW text printers draw underlined
-		CW_AddToTxDisplay(PROSIGN_LETTERS[ch - CW_PROSIGN_SK][0], hasSpace);
-		CW_AddToTxDisplay(PROSIGN_LETTERS[ch - CW_PROSIGN_SK][1], false);
+		// its letters in lowercase, which the CW text printers draw underlined
+		const char *letters = PROSIGN_LETTERS[ch - CW_PROSIGN_SK];
+		CW_AddToTxDisplay(letters[0], hasSpace);
+		for (const char *p = letters + 1; *p; p++)
+			CW_AddToTxDisplay(*p, false);
 		return;
 	}
 
@@ -551,21 +587,13 @@ void CW_AddToTxDisplay(char ch, bool hasSpace)
 	
 	// Add space first if needed (never as the first character on the line)
 	if (hasSpace && gCW_TX_DisplayIndex > 0) {
-		if (gCW_TX_DisplayIndex >= CW_TX_DISPLAY_SIZE - 1) {
-			// Buffer full, shift left by 1 to make room
-			memmove(gCW_TX_Display, gCW_TX_Display + 1, CW_TX_DISPLAY_SIZE - 2);
-			gCW_TX_DisplayIndex = CW_TX_DISPLAY_SIZE - 2;
-		}
+		MakeRoom();
 		gCW_TX_Display[gCW_TX_DisplayIndex++] = ' ';
 		gCW_TX_Display[gCW_TX_DisplayIndex] = '\0';
 	}
 	
 	// Add character
-	if (gCW_TX_DisplayIndex >= CW_TX_DISPLAY_SIZE - 1) {
-		// Buffer full, shift left by 1 to make room
-		memmove(gCW_TX_Display, gCW_TX_Display + 1, CW_TX_DISPLAY_SIZE - 2);
-		gCW_TX_DisplayIndex = CW_TX_DISPLAY_SIZE - 2;
-	}
+	MakeRoom();
 	gCW_TX_Display[gCW_TX_DisplayIndex++] = ch;
 	gCW_TX_Display[gCW_TX_DisplayIndex] = '\0';
 	
@@ -595,8 +623,23 @@ uint8_t CW_GetTxDisplayTail(char *display, uint8_t maxLen)
 		return 0;
 
 	const size_t len = strlen(gCW_TX_Display);
-	const uint8_t copy_len = (len >= (size_t)(maxLen - 1)) ? (uint8_t)(maxLen - 1) : (uint8_t)len;
-	const size_t idx = (len > copy_len) ? (len - copy_len) : 0;
+	uint8_t copy_len = (len >= (size_t)(maxLen - 1)) ? (uint8_t)(maxLen - 1) : (uint8_t)len;
+	size_t idx = (len > copy_len) ? (len - copy_len) : 0;
+
+	// Don't start partway into a prosign. Walk the run of prosign letters the cut
+	// falls in, a whole prosign at a time from the run's start, to the first
+	// prosign boundary at or after the cut.
+	if (IsProsignLetter(gCW_TX_Display[idx])) {
+		size_t at = idx;
+		while (at > 0 && IsProsignLetter(gCW_TX_Display[at - 1]))
+			at--;
+		while (at < idx) {
+			const uint8_t n = ProsignLength(gCW_TX_Display + at);
+			at += n ? n : 1;
+		}
+		copy_len -= (uint8_t)(at - idx);
+		idx = at;
+	}
 
 	if (copy_len > 0) {
 		memcpy(display, gCW_TX_Display + idx, copy_len);

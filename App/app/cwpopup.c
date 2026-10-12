@@ -24,7 +24,6 @@
 #include "ui/ui.h"
 
 #define CW_POPUP_SHOW_10MS     200  // 2 s after the last key press
-#define CW_POPUP_CONFIRM_10MS  500  // 5 s to confirm a keyer mode or key input with MENU before it's dropped
 #define CW_WPM_MIN             10   // same range as the CWwpm menu
 #define CW_WPM_MAX             45
 
@@ -105,7 +104,8 @@ void CW_Popup_Show(CW_PopupKind_t kind)
 		Close(false);
 
 	s_kind = kind;
-	s_10ms = IsPending(kind) ? CW_POPUP_CONFIRM_10MS : CW_POPUP_SHOW_10MS;
+	// a keyer mode or key input waits for MENU as long as the menu itself does
+	s_10ms = IsPending(kind) ? menu_timeout_500ms * 50u : CW_POPUP_SHOW_10MS;
 	gUpdateDisplay = true;
 }
 

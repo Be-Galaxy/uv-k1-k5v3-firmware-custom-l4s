@@ -76,7 +76,7 @@ static CW_KeyerFSMState_t s_KeyerFSMState = CWK_STATE_IDLE;
 typedef enum {
     BUG_STATE_IDLE = 0,
     BUG_STATE_DIT_ELEMENT,  // carrier on, timing dit duration
-    BUG_STATE_DIT_GAP,      // carrier off, inter-element gap (only while dit held)
+    BUG_STATE_DIT_GAP,      // carrier off, inter-element gap after a dit or a dah
     BUG_STATE_DAH_HOLD,     // carrier on, operator-held dah
     BUG_STATE_CHAR_GAP,     // carrier off, timing inter-char gap (mirrors CWK_STATE_INTER_CHAR_GAP)
     BUG_STATE_WORD_GAP,     // carrier off, timing inter-word gap (mirrors CWK_STATE_INTER_WORD_GAP)
@@ -84,6 +84,8 @@ typedef enum {
 
 static CW_BugFSMState_t s_bug_state       = BUG_STATE_IDLE;
 static uint32_t         s_bug_phase_start = 0;
+static bool             s_bug_after_dah   = false;  // the current BUG_STATE_DIT_GAP follows a dah
+static bool             s_bug_dit_memory  = false;  // a dit flicked during a dah or the gap after it
 
 // Internal keyer runtime state
 static uint16_t       s_dit_count  = 0;      // duration in timer ticks (16-bit)
@@ -160,6 +162,8 @@ void CW_KeyerResetRuntime(void)
     s_handkey_release_pending_since_ms = 0;
     s_bug_state = BUG_STATE_IDLE;
     s_bug_phase_start = 0;
+    s_bug_after_dah = false;
+    s_bug_dit_memory = false;
 
     // clear any stale edge memory
     CW_HW_ResetKeySamples();
@@ -836,18 +840,28 @@ static CW_Action_t CW_HandleBugState(void)
         return CW_ACTION_CARRIER_HOLD_ON;
 
     case BUG_STATE_DIT_GAP:
-        // Dah is a raw handkey and takes priority immediately, even mid-gap.
+        // Dah is a raw handkey and takes priority immediately, even mid-gap. A
+        // remembered dit can't go ahead of it, so it's dropped.
         if (in.dah) {
+            s_bug_after_dah = false;
+            s_bug_dit_memory = false;
             s_bug_phase_start = now;
             s_bug_state = BUG_STATE_DAH_HOLD;
             return CW_ACTION_CARRIER_ON;
+        }
+        // After a dah, a dit flicked during the gap is remembered, so it still
+        // plays when it's released before the gap ends
+        if (s_bug_after_dah && in.dit_rise) {
+            s_bug_dit_memory = true;
         }
         if (millis_since(s_bug_phase_start) < (uint32_t)s_gap_count) {
             // Let the gap complete before deciding what to do next.
             return CW_ACTION_NONE;
         }
         s_bug_phase_start = now;
-        if (in.dit) {
+        s_bug_after_dah = false;
+        if (in.dit || s_bug_dit_memory) {
+            s_bug_dit_memory = false;
             s_bug_state = BUG_STATE_DIT_ELEMENT;
             return CW_ACTION_CARRIER_ON;
         }
@@ -856,6 +870,11 @@ static CW_Action_t CW_HandleBugState(void)
         return CW_ACTION_NONE;
 
     case BUG_STATE_DAH_HOLD:
+        // A dit flicked while the dah is still down (rolling from dah to dit) is
+        // remembered and plays after the gap that follows the dah
+        if (in.dit_rise) {
+            s_bug_dit_memory = true;
+        }
         if (in.dah) {
             // Held (or re-closed before a pending release below was confirmed) -
             // a fresh closure is always trusted immediately, same as ptt_action().
@@ -883,6 +902,7 @@ static CW_Action_t CW_HandleBugState(void)
         }
 
         s_bug_phase_start = now;
+        s_bug_after_dah = true;
         //s_bug_state = BUG_STATE_CHAR_GAP;
         s_bug_state = BUG_STATE_DIT_GAP; // make an element gap
         return CW_ACTION_CARRIER_OFF;

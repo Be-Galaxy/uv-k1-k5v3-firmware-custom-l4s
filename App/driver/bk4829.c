@@ -718,16 +718,6 @@ void BK4819_SetFilterBandwidth(const BK4819_FilterBandwidth_t Bandwidth, const b
             val = 0x345C;
             break;
 
-#ifdef ENABLE_EXTRA_FILTER
-        case BK4819_FILTER_BW_NARROWEST: // 2.0 kHz
-            // 0x0058 = (0b000 << 12) | (0b000 << 9) | (0b001 << 6) |
-            //          (0b01 << 4)  | (1 << 3)    | (1 << 2)
-            //        = RF 2.0 kHz, weak-RF 2.0 kHz, AF Tx LPF2 2.5 kHz,
-            //          6.25k mode, FM gain +6 dB.
-            val = 0x0058;
-            break;
-#endif
-
         default:
             val = 0x5C;
             break;

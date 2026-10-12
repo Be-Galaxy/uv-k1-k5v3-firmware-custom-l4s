@@ -799,6 +799,19 @@ void RADIO_SelectVfos(void)
     RADIO_SelectCurrentVfo();
 }
 
+#ifdef ENABLE_EXTRA_FILTER
+// False where the modulation has a single filter, so the wide/narrow bit does
+// nothing there: CW and USB, see RADIO_ResolveFilter()
+bool RADIO_HasFilterChoice(const VFO_Info_t *pVfo)
+{
+    return !(
+    #ifdef ENABLE_CW_MODULATOR
+        pVfo->Modulation == MODULATION_CW ||
+    #endif
+        pVfo->Modulation == MODULATION_USB);
+}
+#endif
+
 // Single place that turns the stored one-bit wide/narrow selection into an
 // actual RF filter. The bit means the same thing everywhere ("this channel is
 // the narrow one"); only this function knows what that costs in kilohertz, and
@@ -806,24 +819,20 @@ void RADIO_SelectVfos(void)
 //
 //   FM       wide 25k     narrow 12.5k  (SetNFM upgrades narrow to 6.25k)
 //   AM       wide 25k     narrow BW_AM
-//   CW/USB   wide 6.25k   narrow 2.0k   (SetNFM does not apply)
+//   CW/USB   6.25k only                 (SetNFM does not apply)
 //
-// CW and SSB never want 12.5k or wider, so their pair is shifted down a notch.
-// That is deliberately independent of SetNFM, which is documented as an FM
-// setting and has no business moving an SSB passband.
+// CW and SSB never want 12.5k or wider, so they use the 6.25k preset. That is
+// deliberately independent of SetNFM, which is documented as an FM setting and
+// has no business moving an SSB passband. There is no narrow CW/SSB filter: the
+// BK4829's narrower presets (2.0k on paper) measured no different from 6.25k in
+// CW, about 6.5-7 kHz either way, so the bit is left alone for FM and AM.
 BK4819_FilterBandwidth_t RADIO_ResolveFilter(const VFO_Info_t *pVfo)
 {
     const bool narrow = (pVfo->CHANNEL_BANDWIDTH != BANDWIDTH_WIDE);
 
 #ifdef ENABLE_EXTRA_FILTER
-    if (
-    #ifdef ENABLE_CW_MODULATOR
-        pVfo->Modulation == MODULATION_CW ||
-    #endif
-        pVfo->Modulation == MODULATION_USB)
-    {
-        return narrow ? BK4819_FILTER_BW_NARROWEST : BK4819_FILTER_BW_NARROWER;
-    }
+    if (!RADIO_HasFilterChoice(pVfo))
+        return BK4819_FILTER_BW_NARROWER;
 #endif
 
     if (pVfo->Modulation == MODULATION_AM)
@@ -1482,28 +1491,6 @@ void RADIO_PrepareCssTX(void)
 }
 
 #ifdef ENABLE_CW_MODULATOR
-
-void RADIO_CW_ApplyModeFilter(VFO_Info_t *pVfo, ModulationMode_t previous)
-{
-#ifdef ENABLE_EXTRA_FILTER
-	static uint8_t s_widthBeforeCW[2] = {BANDWIDTH_WIDE, BANDWIDTH_WIDE};
-	const unsigned int vfo = (pVfo == &gEeprom.VfoInfo[1]);
-
-	if (pVfo->Modulation == MODULATION_CW && previous != MODULATION_CW) {
-		s_widthBeforeCW[vfo] = pVfo->CHANNEL_BANDWIDTH;
-		pVfo->CHANNEL_BANDWIDTH = BANDWIDTH_NARROW;  // 2.0k in CW, see RADIO_ResolveFilter()
-	}
-	else if (previous == MODULATION_CW && pVfo->Modulation != MODULATION_CW && pVfo->Modulation != MODULATION_USB
-	         && pVfo->CHANNEL_BANDWIDTH == BANDWIDTH_NARROW) {
-		// narrow is 2k only in CW/SSB; FM and AM read the same bit as their own
-		// narrow, so still on CW's 2k default, hand back the width from before CW
-		pVfo->CHANNEL_BANDWIDTH = s_widthBeforeCW[vfo];
-	}
-#else
-	(void)pVfo;
-	(void)previous;
-#endif
-}
 
 void RADIO_CW_BeginResume(void)
 {

@@ -29,7 +29,7 @@
 
 typedef enum {
 	CW_POPUP_NONE = 0,
-	CW_POPUP_KEYER_MODE,   // up/down or the action step a pending mode; only MENU applies it, 5 s idle drops it
+	CW_POPUP_KEYER_MODE,   // up/down or the action step a pending mode; only MENU applies it, the menu's idle timeout drops it
 	CW_POPUP_SPEED,        // up/down change WPM live; the new speed stays however the popup closes
 	CW_POPUP_KEY_INPUT,    // same as keyer mode, for the key input
 	CW_POPUP_KEY_STUCK,    // the pending input failed the stuck-key check

@@ -566,7 +566,8 @@ SET_NFM_LIST = ["NARROW", "NARROWER"]
 # NARROWEST selector on CW/USB channels, so TX_LOCK could never be set there.
 # Schema 2 gives bit 6 back to TX_LOCK and keeps the filter in bit 1 as a plain
 # wide/narrow flag, with the firmware deciding what those mean per modulation
-# (FM 25k/12.5k, CW and SSB 6.25k/2.0k).
+# (FM 25k/12.5k, AM its own pair). CW and SSB have a single 6.25k filter and
+# ignore the bit.
 #
 # Schema 1 is read-only: an image is upgraded in memory on load and only ever
 # written back as schema 2. Pre-v1.4 firmware never wrote the marker, so it
@@ -575,9 +576,8 @@ NR7Y_SCHEMA_ADDR = 0x00A170
 NR7Y_SCHEMA_LEGACY = 1
 NR7Y_SCHEMA_CURRENT = 2
 
-# modulation -> (wide name, narrow name). CW and USB have no narrow mode string
-# in chirp_common.MODES, so their bandwidth bit rides in an Extra rather than in
-# the mode, and both entries are the same name.
+# modulation -> (wide name, narrow name). CW and USB have a single filter, so both
+# entries are the same name.
 _NR7Y_MODE_NAME = {
     0: ("FM", "NFM"),
     1: ("AM", "NAM"),
@@ -585,8 +585,8 @@ _NR7Y_MODE_NAME = {
     3: ("CW", "CW"),
 }
 
-# mode name -> (modulation, bandwidth). A bandwidth of None means the mode
-# string does not determine the bit - it comes from the Bandwidth extra.
+# mode name -> (modulation, bandwidth). A bandwidth of None means the bit does
+# nothing for that mode (USB and CW), so it's stored as wide.
 _NR7Y_MODE_BITS = {
     "FM":  (0, 0),
     "NFM": (0, 1),
@@ -595,10 +595,6 @@ _NR7Y_MODE_BITS = {
     "USB": (2, None),
     "CW":  (3, None),
 }
-
-# Wide/narrow as the user sees it. The firmware translates per modulation, so
-# CHIRP deliberately does not talk in kilohertz here.
-NR7Y_BANDWIDTH_LIST = ["Wide", "Narrow"]
 
 # Set RxA value
 SET_RXA_FM_LIST = ["FLAT", "CLEAN", "MID", "BOOST", "MAX"]
@@ -853,10 +849,10 @@ _NR7Y_CW_MACRO_SIG = 0x80     # Signature stored in high bit of length byte
 # Characters a macro holds besides A-Z and 0-9 (cwmacro.c CW_ValidateChar)
 _NR7Y_CW_MACRO_PUNCT = "+,-./=?(&"
 # Prosigns, one byte each in a macro (cwmacro.h CW_PROSIGN_*), written <SK> here
-_NR7Y_CW_PROSIGNS = {0x01: "SK", 0x02: "BK", 0x03: "KA", 0x04: "SN", 0x05: "UR"}
+_NR7Y_CW_PROSIGNS = {0x01: "SK", 0x02: "BK", 0x03: "KA", 0x04: "SN", 0x05: "UR", 0x06: "SOS"}
 _NR7Y_CW_PROSIGN_CODES = {name: code for code, name in _NR7Y_CW_PROSIGNS.items()}
-# Longest a full macro can be as text: every byte a word of its own, or a <SK>
-_NR7Y_CW_MACRO_TEXT_MAX = _NR7Y_CW_MACRO_MAX_LEN * 5
+# Longest a full macro can be as text: every byte a word of its own, up to <SOS>
+_NR7Y_CW_MACRO_TEXT_MAX = _NR7Y_CW_MACRO_MAX_LEN * 6
 
 # CW key input mode display strings (menu index 0-10 stored directly in EEPROM bits 0-4)
 _NR7Y_CW_KEY_INPUT_MODES = [
@@ -1650,39 +1646,14 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
     def _nr7y_apply_mode(self, _mem_chan, memory):
         """Write modulation and bandwidth for the memory's mode.
 
-        The mode string fixes the bandwidth bit only for FM and AM, where
-        FM/NFM and AM/NAM are the ordinary CHIRP convention. USB and CW have no
-        narrow mode string to carry it (chirp_common.MODES has NCW but no NUSB,
-        and using one without the other would be inconsistent), so their bit
-        comes from the Bandwidth extra and is never inferred.
+        The mode string fixes the bandwidth bit for FM and AM, where FM/NFM
+        and AM/NAM are the ordinary CHIRP convention. USB and CW have a single
+        6.25 kHz filter on this firmware, so their bit does nothing and is
+        stored as wide.
         """
         mod, bw = _NR7Y_MODE_BITS.get(memory.mode, (0, 0))
         _mem_chan.modulation = mod
-
-        if bw is None:
-            bw = 0
-            for setting in getattr(memory, 'extra', None) or []:
-                if setting.get_name() == "nr7y_bandwidth":
-                    try:
-                        bw = NR7Y_BANDWIDTH_LIST.index(str(setting.value))
-                    except ValueError:
-                        bw = 0
-                    break
-        _mem_chan.bandwidth = bw
-
-    def _nr7y_mem_chan(self, number):
-        """The raw channel or VFO record for a memory number, or None."""
-        if not isinstance(number, int):
-            return None
-        ch_num = number - 1
-        if ch_num < 0:
-            return None
-        if ch_num < MR_CHANNELS_MAX:
-            return self._memobj.channel[ch_num]
-        try:
-            return self._memobj.vfo_channel[ch_num - MR_CHANNELS_MAX]
-        except IndexError:
-            return None
+        _mem_chan.bandwidth = 0 if bw is None else bw
 
     # Extract a high-level memory object from the low-level memory map
     # This is called to populate a memory in the UI
@@ -3554,8 +3525,6 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         append_label(help_group,"(Lx) = Low TX power, with x = level 1 to 5" , "Under each VFO" )
         append_label(help_group,"(W) = Wide BF filter: 12.5kHz (WIDE)" , "Under each VFO" )
         append_label(help_group,"(N) = Narrow BF filter: 6.25kHz (NARROW)" , "Under each VFO" )
-        append_label(help_group,"(6k) = Wide filter on a CW or USB channel" , "Under each VFO, replaces W/N" )
-        append_label(help_group,"(2k) = Narrow filter on a CW or USB channel" , "Under each VFO, replaces W/N" )
 
         append_label(help_group,"" , "" )
 
@@ -3602,7 +3571,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
         append_label(help_group,"","" )
         append_label(help_group,"(4 FC) = long press: start the CTCSS & frequency scan " , "Same as long press " )
-        append_label(help_group,"(4 FC) = F then LONG press: toggle the RX filter bandwidth of the active VFO " , "FM/AM show W/N, CW & USB show 6k/2k " )
+        append_label(help_group,"(4 FC) = F then LONG press: toggle the RX filter bandwidth of the active VFO " , "FM/AM only: CW & USB have one filter " )
         append_label(help_group,"(4 FC) = short press: digit 4  "," " )
 
 
@@ -3854,11 +3823,9 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         # find band
         band = self._find_band(memory.freq)
 
-        # ---- NR7Y: mode by table, and never pin the bandwidth bit --------
-        # Upstream forced bandwidth = 1 for USB, which made the bit unusable as
-        # a filter selector. Under EEPROM schema 2 that bit is the user's choice
-        # (wide = 6.25k, narrow = 2.0k on CW/SSB), so USB and CW take it from
-        # the Bandwidth extra instead - see _nr7y_apply_mode().
+        # ---- NR7Y: mode by table --------------------------------------------
+        # Upstream forced bandwidth = 1 for USB. USB and CW have a single filter
+        # on this firmware, so the bit is stored as wide - see _nr7y_apply_mode().
         self._nr7y_apply_mode(_mem_chan, memory)
 
         # frequency/offset
@@ -3956,32 +3923,6 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
         return rf
 
     # ------------------------------------------------------------------ memory
-
-    def get_memory(self, number):
-        mem = super().get_memory(number)
-
-        _mem_chan = self._nr7y_mem_chan(number)
-        if _mem_chan is None or getattr(mem, 'empty', False):
-            return mem
-
-        # On CW and SSB the bandwidth bit is not carried by the mode string, so
-        # surface it as its own setting. Plain Wide/Narrow: the firmware decides
-        # that means 6.25k or 2.0k on these modes, and naming the widths here
-        # would only invite confusion with the FM ones.
-        if int(_mem_chan.modulation) in (2, 3) and self._is_nr7y_cw_firmware():
-            enc = list_def(int(_mem_chan.bandwidth), NR7Y_BANDWIDTH_LIST, 0)
-            rs = RadioSetting(
-                "nr7y_bandwidth", "Bandwidth",
-                RadioSettingValueList(NR7Y_BANDWIDTH_LIST, None, enc))
-            rs.set_doc(
-                'Receive filter for this CW/SSB channel.\n'
-                '* Wide: 6.25 kHz\n'
-                '* Narrow: 2.0 kHz')
-            if mem.extra is None:
-                mem.extra = RadioSettingGroup("Extra", "extra")
-            mem.extra.append(rs)
-
-        return mem
 
     # ------------------------------------------------------------------ schema
 
@@ -4312,7 +4253,7 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
                                     RadioSettingValueString(
                                         0, _NR7Y_CW_MACRO_TEXT_MAX, txt))
                 rs_m.set_doc("CW macro %d: A-Z, 0-9, + , - . / = ? ( & and the "
-                             "prosigns <SK> <BK> <KA> <SN> <UR>; up to 46 "
+                             "prosigns <SK> <BK> <KA> <SN> <UR> <SOS>; up to 46 "
                              "characters, not counting spaces, with a prosign "
                              "counting as one" % i)
                 macros.append(rs_m)

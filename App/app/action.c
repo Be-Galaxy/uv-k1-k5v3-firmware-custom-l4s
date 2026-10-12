@@ -361,18 +361,12 @@ void ACTION_SwitchDemodul(void)
 {
     gRequestSaveChannel = 1;
 
-#ifdef ENABLE_CW_MODULATOR
-    const ModulationMode_t previous = gTxVfo->Modulation;
-#endif
-
     gTxVfo->Modulation++;
 
     if(gTxVfo->Modulation == MODULATION_UKNOWN)
         gTxVfo->Modulation = MODULATION_FM;
 
 #ifdef ENABLE_CW_MODULATOR
-	RADIO_CW_ApplyModeFilter(gTxVfo, previous);
-
 	// Arm/dearm keyer ownership immediately so a very quick PTT press after
 	// switching to CW cannot beat deferred reconfigure/save paths.
 	CW_KeyerReconfigure(gTxVfo->Modulation == MODULATION_CW);
@@ -388,8 +382,23 @@ void ACTION_SwitchDemodul(void)
 
 }
 
+// CW and USB have a single filter, so there's nothing to switch
+static void RefuseFilterSwitch(void)
+{
+#ifdef ENABLE_CW_MODULATOR
+	CW_ErrorBeep();  // a sidetone dit in CW, the double beep elsewhere
+#else
+	gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+#endif
+}
+
 void ACTION_SwitchFilter(void)
 {
+	if (!RADIO_HasFilterChoice(gTxVfo)) {
+		RefuseFilterSwitch();
+		return;
+	}
+
 	// One bit, so this is a straight toggle. What wide and narrow resolve to
 	// depends on the modulation - see RADIO_ResolveFilter().
 	gTxVfo->CHANNEL_BANDWIDTH = (gTxVfo->CHANNEL_BANDWIDTH == BANDWIDTH_WIDE)
@@ -897,9 +906,14 @@ void ACTION_Wn(void)
     const bool isRx = FUNCTION_IsRx();
     VFO_Info_t *pVfo = isRx ? gRxVfo : gTxVfo;
 
+    if (!RADIO_HasFilterChoice(pVfo)) {
+        RefuseFilterSwitch();
+        return;
+    }
+
     pVfo->CHANNEL_BANDWIDTH = !pVfo->CHANNEL_BANDWIDTH;
 
-    // AM, USB and CW read the bit as their own filter pair, see RADIO_ResolveFilter()
+    // These read the bit through RADIO_ResolveFilter()
     if (pVfo->Modulation == MODULATION_AM || pVfo->Modulation == MODULATION_USB
 #ifdef ENABLE_CW_MODULATOR
         || pVfo->Modulation == MODULATION_CW

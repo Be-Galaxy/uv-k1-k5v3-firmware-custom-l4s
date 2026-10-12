@@ -55,14 +55,16 @@
 // Prosigns that have no punctuation of their own (BT, AR, KN and AS decode as
 // = + ( &). Each is one byte wherever a character goes: the decoder, macros and
 // playback, which sends it run together. In the TX display buffer and the macro
-// preview it becomes its two letters in lowercase, which the CW text printers
-// draw as underlined capitals. CHIRP shows it as <SK>.
+// preview it becomes its letters in lowercase, which the CW text printers draw
+// as underlined capitals. CHIRP shows it as <SK>.
+// New prosigns go on the end: these bytes are stored in macros.
 #define CW_PROSIGN_SK  '\x01'  // ...-.-   end of contact
 #define CW_PROSIGN_BK  '\x02'  // -...-.-  break
 #define CW_PROSIGN_KA  '\x03'  // -.-.-    attention (also CT)
 #define CW_PROSIGN_SN  '\x04'  // ...-.    understood (also VE)
 #define CW_PROSIGN_UR  '\x05'  // ..-.-.   U and R run together
-#define CW_IS_PROSIGN(ch) ((ch) >= CW_PROSIGN_SK && (ch) <= CW_PROSIGN_UR)
+#define CW_PROSIGN_SOS '\x06'  // ...---... distress, 9 elements
+#define CW_IS_PROSIGN(ch) ((ch) >= CW_PROSIGN_SK && (ch) <= CW_PROSIGN_SOS)
 
 // Load a macro from EEPROM into buffer
 // Returns actual character count (without considering spaces)
