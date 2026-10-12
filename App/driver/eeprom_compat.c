@@ -59,7 +59,11 @@ static const AddrMapping_t ADDR_MAPPINGS[] = {
                                                 // app/foxhunt.c; concatenated here so aircopy clones
                                                 // them together with the VFOs)
 
+#ifdef ENABLE_L4S_CONTROL
+    _MK_MAPPING(0x00A000, 0x00A000, 0x00B000),  // Legacy profile plus 56 guarded satellite profiles at 0xA200..0xAFFF.
+#else
     _MK_MAPPING(0x00A000, 0x00A000, 0x00A171),  // Settings * 16 Bytes (ex 0x004000)        0x00A000 -> 0x00A010
+#endif
                                                 // Settings * 16 Bytes (ex 0x005000)        0x00A010 -> 0x00A020
                                                 // Settings FM * 8 Bytes (0x006000)         0x00A020 -> 0x00A028
                                                 // MR FM * 128 Bytes (0x003000)             0x00A028 -> 0x00A0A8

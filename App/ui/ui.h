@@ -25,6 +25,9 @@ enum GUI_DisplayType_t
     DISPLAY_MAIN = 0,
     DISPLAY_MENU,
     DISPLAY_SCANNER,
+#ifdef ENABLE_L4S_CONTROL
+    DISPLAY_L4S,
+#endif
 
 #ifdef ENABLE_CODE_PRACTICE
 	DISPLAY_CPO,

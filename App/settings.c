@@ -25,6 +25,9 @@
 #include "driver/bk4819.h"
 #include "driver/py25q16.h"
 #include "misc.h"
+#ifdef ENABLE_L4S_CONTROL
+#include "app/l4s_control.h"
+#endif
 #include "settings.h"
 #include "ui/menu.h"
 
@@ -893,12 +896,18 @@ void SETTINGS_SaveFM(void)
 
 void SETTINGS_SaveVfoIndices(void)
 {
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_Active()) return;
+#endif
     gVfoStateChanged = true;
     gVfoSaveCountdown_10ms = 2;
 }
 
 void SETTINGS_SaveVfoIndicesFlush(void)
 {
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_Active()) return;
+#endif
     if (gScheduleVfoSave) {
         gScheduleVfoSave = false;
         
@@ -929,6 +938,9 @@ void SETTINGS_SaveVfoIndicesFlush(void)
 
 void SETTINGS_SaveSettings(void)
 {
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_Active()) return;
+#endif
     uint8_t *State;
     uint8_t tmp = 0;
     uint8_t SecBuf[0x50];
@@ -1230,6 +1242,9 @@ void SETTINGS_SaveSettings(void)
 
 void SETTINGS_SaveChannel(uint16_t Channel, uint8_t VFO, const VFO_Info_t *pVFO, uint8_t Mode)
 {
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_Active()) return;
+#endif
 #ifdef ENABLE_NOAA
     if (IS_NOAA_CHANNEL(Channel))
         return;
@@ -1316,6 +1331,9 @@ void SETTINGS_SaveChannelName(uint16_t channel, const char * name)
 
 void SETTINGS_UpdateChannel(uint16_t channel, const VFO_Info_t *pVFO, bool keep)
 {
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_Active()) return;
+#endif
 #ifdef ENABLE_NOAA
     if (IS_NOAA_CHANNEL(channel))
         return;

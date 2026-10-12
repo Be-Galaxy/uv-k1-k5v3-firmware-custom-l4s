@@ -71,6 +71,9 @@
 #include "functions.h"
 #include "helper/battery.h"
 #include "misc.h"
+#ifdef ENABLE_L4S_CONTROL
+#include "app/l4s_control.h"
+#endif
 #include "radio.h"
 #include "settings.h"
 
@@ -121,6 +124,9 @@ void (*const ProcessKeysFunctions[])(KEY_Code_t Key, bool bKeyPressed, bool bKey
     [DISPLAY_MAIN] = &MAIN_ProcessKeys,
     [DISPLAY_MENU] = &MENU_ProcessKeys,
     [DISPLAY_SCANNER] = &SCANNER_ProcessKeys,
+#ifdef ENABLE_L4S_CONTROL
+    [DISPLAY_L4S] = &L4S_ProcessKeys,
+#endif
 
 #ifdef ENABLE_CODE_PRACTICE
 	[DISPLAY_CPO] = &CPO_ProcessKeys,
@@ -833,7 +839,11 @@ void APP_StartListening(FUNCTION_Type_t function)
     if (function == FUNCTION_MONITOR)
 #endif
     {   // squelch is disabled
-        if (gScreenToDisplay != DISPLAY_MENU)     // 1of11 .. don't close the menu
+        if (gScreenToDisplay != DISPLAY_MENU
+#ifdef ENABLE_L4S_CONTROL
+            && !L4S_Active() // Opening satellite RX audio must not navigate away from its page/menu.
+#endif
+        )
             GUI_SelectNextDisplay(DISPLAY_MAIN);
     }
     else
@@ -1522,7 +1532,11 @@ void CheckKeys(void)
 
 // -------------------- PTT ------------------------
 #ifdef ENABLE_CW_MODULATOR
-	if (!gCW_KeyerManagesPtt)   // CW keyer owns PTT entirely when active
+    if (!gCW_KeyerManagesPtt
+#ifdef ENABLE_L4S_CONTROL
+        && !L4S_BlockPhysicalPtt()
+#endif
+    )   // CW keyer or L4S session owns PTT while active
     {
 #endif
     const bool serialConfigInProgress = SerialConfigInProgress();
@@ -2068,6 +2082,9 @@ void APP_TimeSlice500ms(void)
     }
 
     if(gCurrentFunction != FUNCTION_TRANSMIT && !FUNCTION_IsRx()
+#ifdef ENABLE_L4S_CONTROL
+        && !L4S_Active()
+#endif
     #ifdef ENABLE_AIRCOPY
         && gScreenToDisplay != DISPLAY_AIRCOPY
     #endif
@@ -2330,6 +2347,9 @@ static void ALARM_Off(void)
 
 static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
+#ifdef ENABLE_L4S_CONTROL
+    if (L4S_LocalKey(Key,bKeyPressed,bKeyHeld)) return;
+#endif
 #ifdef ENABLE_CODE_PRACTICE
 	if (gCW_CpoActive) {
 		if (Key == KEY_EXIT) {

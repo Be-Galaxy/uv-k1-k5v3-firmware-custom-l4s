@@ -96,5 +96,8 @@ typedef struct
 void cdc_acm_init(cdc_acm_rx_buf_t rx_buf);
 void cdc_acm_data_send_with_dtr(const uint8_t *buf, uint32_t size);
 void cdc_acm_data_send_with_dtr_async(const uint8_t *buf, uint32_t size);
+#ifdef ENABLE_L4S_CONTROL
+bool cdc_acm_l4s_reply(const uint8_t *buf, uint32_t size);
+#endif
 
 #endif

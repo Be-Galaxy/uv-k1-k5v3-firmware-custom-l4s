@@ -28,6 +28,9 @@
     #include "app/rxtx_log.h"
 #endif
 #include "misc.h"
+#ifdef ENABLE_L4S_CONTROL
+#include "app/l4s_control.h"
+#endif
 #include "radio.h"
 #include "settings.h"
 #include "version.h"
@@ -362,6 +365,9 @@ void Main(void)
     #endif
         
     while (true) {
+#ifdef ENABLE_L4S_CONTROL
+        L4S_ControlTick();
+#endif
         APP_Update();
 
 #ifdef ENABLE_CW_MODULATOR

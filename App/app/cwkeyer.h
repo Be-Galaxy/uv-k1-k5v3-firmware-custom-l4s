@@ -59,6 +59,11 @@ void CW_StartMacroPlayback(uint8_t macroIndex, bool repeat);
 // Stop playback and cancel any pending repeat
 void CW_StopPlayback(void);
 
+#ifdef ENABLE_L4S_CONTROL
+bool CW_StartTextPlayback(const uint8_t *text, uint8_t length);
+uint8_t CW_TextPlaybackPosition(void);
+#endif
+
 // Periodic handler for playback FSM - returns CW_Action_t (carrier on/off/hold)
 CW_Action_t CW_PlaybackHandleState(void);
 
