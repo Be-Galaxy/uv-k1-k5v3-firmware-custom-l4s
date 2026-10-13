@@ -210,7 +210,8 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
         case MENU_W_N:
             //*pMin = 0;
-            *pMax = ARRAY_SIZE(gSubMenu_W_N) - 1;
+            // CW and USB have one filter, shown as the only choice
+            *pMax = RADIO_HasFilterChoice(gTxVfo) ? ARRAY_SIZE(gSubMenu_W_N) - 1 : 0;
             break;
 
         #ifdef ENABLE_ALARM
@@ -408,7 +409,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
 		case MENU_CW_SIDETONE_LEVEL:
 			*pMin = 0;
-			*pMax = 6;  // 0=off, 1-6 are volume levels
+			*pMax = CW_SIDETONE_LEVEL_MAX;  // 0=off, 1-15 are volume levels
 			break;
 
 		case MENU_CW_KEYER_MODE:
@@ -439,9 +440,19 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 			*pMax = 127;  // 0-127 menu value (stored as seconds)
 			break;
 
+		case MENU_CW_ROGER_DITS:
+			*pMin = CW_ROGER_DAH_DITS_MIN;
+			*pMax = CW_ROGER_DAH_DITS_MAX;
+			break;
+
 		case MENU_CW_BKIN:
 			*pMin = 0;  // off
 			*pMax = 1;  // on
+			break;
+
+		case MENU_CW_HANG:
+			*pMin = CW_HANG_10MS_MIN;  // 10 ms steps
+			*pMax = CW_HANG_10MS_MAX;
 			break;
 
 #endif
@@ -646,8 +657,11 @@ void MENU_AcceptSetting(void)
             return;
 
         case MENU_W_N:
-            gTxVfo->CHANNEL_BANDWIDTH = gSubMenuSelection;
-            gRequestSaveChannel       = 1;
+            // leave the bit alone where it does nothing, so FM and AM keep their width
+            if (RADIO_HasFilterChoice(gTxVfo)) {
+                gTxVfo->CHANNEL_BANDWIDTH = gSubMenuSelection;
+                gRequestSaveChannel       = 1;
+            }
             return;
 
 #ifndef ENABLE_FEAT_F4HWN
@@ -1129,6 +1143,10 @@ void MENU_AcceptSetting(void)
 			gEeprom.CW_BREAKIN_ENABLE = gSubMenuSelection;  // 0=off, 1=on
 			break;
 
+		case MENU_CW_HANG:
+			gEeprom.CW_HANG_10MS = gSubMenuSelection;
+			break;
+
 		case MENU_CW_KEY_INPUT:
 			// Map menu selection (0-10) to bit-mapped value
 			{
@@ -1196,6 +1214,10 @@ void MENU_AcceptSetting(void)
 
 		case MENU_CW_MSG_REPEAT:
 			gEeprom.CW_MESSAGE_REPEAT_DELAY = gSubMenuSelection;
+			break;
+
+		case MENU_CW_ROGER_DITS:
+			gEeprom.CW_ROGER_DAH_DITS = gSubMenuSelection;
 			break;
 #endif
 
@@ -1304,7 +1326,7 @@ void MENU_ShowCurrentSetting(void)
             break;
 
         case MENU_W_N:
-            gSubMenuSelection = gTxVfo->CHANNEL_BANDWIDTH;
+            gSubMenuSelection = RADIO_HasFilterChoice(gTxVfo) ? gTxVfo->CHANNEL_BANDWIDTH : 0;
             break;
 
 #ifndef ENABLE_FEAT_F4HWN
@@ -1687,6 +1709,10 @@ void MENU_ShowCurrentSetting(void)
 			gSubMenuSelection = gEeprom.CW_BREAKIN_ENABLE;
 			break;
 
+		case MENU_CW_HANG:
+			gSubMenuSelection = gEeprom.CW_HANG_10MS;
+			break;
+
 		case MENU_CW_KEY_INPUT:
 			gSubMenuSelection = gEeprom.CW_KEY_INPUT_MENU;
 		break;
@@ -1700,6 +1726,10 @@ void MENU_ShowCurrentSetting(void)
 
 		case MENU_CW_MSG_REPEAT:
 			gSubMenuSelection = gEeprom.CW_MESSAGE_REPEAT_DELAY;
+			break;
+
+		case MENU_CW_ROGER_DITS:
+			gSubMenuSelection = gEeprom.CW_ROGER_DAH_DITS;
 			break;
 #endif
 

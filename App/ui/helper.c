@@ -80,7 +80,30 @@ void UI_PrintStringBuffer(const char *pString, uint8_t * buffer, uint32_t char_w
     }
 }
 
-void UI_PrintString(const char *pString, uint8_t Start, uint8_t End, uint8_t Line, uint8_t Width)
+// CW text carries each prosign as its two letters in lowercase (see CW_PROSIGN_SK),
+// drawn as capitals with an underline. The usual mark is a bar over the letters, but
+// the small font's capitals start on the top row of their line, so it goes under.
+static bool IsProsignLetter(char c)
+{
+#ifdef ENABLE_CW_MODULATOR
+    return c >= 'a' && c <= 'z';
+#else
+    (void)c;
+    return false;  // no CW text to mark, so the underline code drops out
+#endif
+}
+
+// Underline width px of a prosign letter's cell at the given row bit, running on
+// across the gap to the next cell (pitch px on) when that's a prosign letter too
+static void UnderlineProsignLetter(uint8_t *row, unsigned int width, unsigned int pitch, uint8_t bit, bool joinNext)
+{
+    const unsigned int end = joinNext ? pitch : width;
+    for (unsigned int x = 0; x < end; x++)
+        row[x] |= bit;
+}
+
+// cw: CW text, with a dotted zero and underlined prosign letters
+static void PrintStringBig(const char *pString, uint8_t Start, uint8_t End, uint8_t Line, uint8_t Width, bool cw)
 {
     size_t i;
     size_t Length = strlen(pString);
@@ -90,14 +113,29 @@ void UI_PrintString(const char *pString, uint8_t Start, uint8_t End, uint8_t Lin
 
     for (i = 0; i < Length; i++)
     {
-        const unsigned int ofs   = (unsigned int)Start + (i * Width);
-        if (pString[i] > ' ' && pString[i] < 127)
+        const unsigned int ofs     = (unsigned int)Start + (i * Width);
+        const bool         prosign = cw && IsProsignLetter(pString[i]);
+        const char         c       = prosign ? pString[i] - ('a' - 'A') : pString[i];
+        if (c > ' ' && c < 127)
         {
-            const unsigned int index = pString[i] - ' ' - 1;
-            memcpy(gFrameBuffer[Line + 0] + ofs, &gFontBig[index][0], 7);
-            memcpy(gFrameBuffer[Line + 1] + ofs, &gFontBig[index][7], 7);
+            const unsigned int index = c - ' ' - 1;
+            const uint8_t *glyph = (cw && c == '0') ? gFontBigZeroDotted : gFontBig[index];
+            memcpy(gFrameBuffer[Line + 0] + ofs, &glyph[0], 7);
+            memcpy(gFrameBuffer[Line + 1] + ofs, &glyph[7], 7);
+            if (prosign)  // capitals end on row 12 of 16, so row 14 leaves a gap
+                UnderlineProsignLetter(gFrameBuffer[Line + 1] + ofs, 7, Width, 0x40, IsProsignLetter(pString[i + 1]));
         }
     }
+}
+
+void UI_PrintString(const char *pString, uint8_t Start, uint8_t End, uint8_t Line, uint8_t Width)
+{
+    PrintStringBig(pString, Start, End, Line, Width, false);
+}
+
+void UI_PrintStringCW(const char *pString, uint8_t Start, uint8_t End, uint8_t Line)
+{
+    PrintStringBig(pString, Start, End, Line, 8, true);
 }
 
 void UI_PrintStringSmall(const char *pString, uint8_t Start, uint8_t End, uint8_t Line, uint8_t char_width, const uint8_t *font)
@@ -116,6 +154,61 @@ void UI_PrintStringSmall(const char *pString, uint8_t Start, uint8_t End, uint8_
 void UI_PrintStringSmallNormal(const char *pString, uint8_t Start, uint8_t End, uint8_t Line)
 {
     UI_PrintStringSmall(pString, Start, End, Line, ARRAY_SIZE(gFontSmall[0]), (const uint8_t *)gFontSmall);
+}
+
+// Frequency-font glyph for c, or NULL for the few CW characters it lacks
+static const uint8_t *CWLargeGlyph(char c)
+{
+    if (c == '0')
+        return gFontBigDigitZeroDotted;
+    if (c == 'O')
+        return gFontBigDigits[0];
+    if (c > '0' && c <= '9')
+        return gFontBigDigits[c - '0'];
+    if (c == '-')
+        return gFontBigDigits[10];
+
+    const char *p = (c != '\0') ? strchr(gFontBigTextChars, c) : NULL;
+    return p ? gFontBigText[p - gFontBigTextChars] : NULL;
+}
+
+void UI_PrintStringCWLarge(const char *pString, uint8_t Start, uint8_t Line)
+{
+    for (size_t i = 0; pString[i] != '\0'; i++) {
+        const bool         prosign = IsProsignLetter(pString[i]);
+        const char         c       = prosign ? pString[i] - ('a' - 'A') : pString[i];
+        const unsigned int ofs     = Start + i * UI_CW_LARGE_PITCH;
+        const uint8_t     *glyph   = CWLargeGlyph(c);
+
+        if (glyph) {
+            memcpy(gFrameBuffer[Line + 0] + ofs, glyph, 10);
+            memcpy(gFrameBuffer[Line + 1] + ofs, glyph + 10, 10);
+        } else if (c > ' ' && c < 127) {
+            // e.g. '&': the regular big font, centred in the cell
+            memcpy(gFrameBuffer[Line + 0] + ofs + 1, &gFontBig[c - ' ' - 1][0], 7);
+            memcpy(gFrameBuffer[Line + 1] + ofs + 1, &gFontBig[c - ' ' - 1][7], 7);
+        }
+        if (prosign)  // capitals end on row 14 of 16
+            UnderlineProsignLetter(gFrameBuffer[Line + 1] + ofs, 10, UI_CW_LARGE_PITCH, 0x80, IsProsignLetter(pString[i + 1]));
+    }
+}
+
+void UI_PrintStringSmallCW(const char *pString, uint8_t Start, uint8_t Line)
+{
+    const unsigned int char_spacing = sizeof(gFontSmallZeroDotted) + 1;
+
+    UI_PrintStringSmallNormal(pString, Start, 0, Line);
+    // Redraw each zero and prosign letter in the slot UI_PrintStringBuffer gave it
+    for (size_t i = 0; pString[i] != '\0'; i++) {
+        uint8_t *cell = gFrameBuffer[Line] + Start + 1 + i * char_spacing;
+        if (pString[i] == '0') {
+            memcpy(cell, gFontSmallZeroDotted, sizeof(gFontSmallZeroDotted));
+        } else if (IsProsignLetter(pString[i])) {
+            // capitals fill rows 0-6, so the underline on row 7 touches them
+            memcpy(cell, gFontSmall[pString[i] - ('a' - 'A') - ' ' - 1], sizeof(gFontSmall[0]));
+            UnderlineProsignLetter(cell, sizeof(gFontSmall[0]), char_spacing, 0x80, IsProsignLetter(pString[i + 1]));
+        }
+    }
 }
 
 void UI_PrintStringSmallNormalInverse(const char *pString, uint8_t Start, uint8_t End, uint8_t Line)

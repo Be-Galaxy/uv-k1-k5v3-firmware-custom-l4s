@@ -718,16 +718,6 @@ void BK4819_SetFilterBandwidth(const BK4819_FilterBandwidth_t Bandwidth, const b
             val = 0x345C;
             break;
 
-#ifdef ENABLE_EXTRA_FILTER
-        case BK4819_FILTER_BW_NARROWEST: // 2.0 kHz
-            // 0x0058 = (0b000 << 12) | (0b000 << 9) | (0b001 << 6) |
-            //          (0b01 << 4)  | (1 << 3)    | (1 << 2)
-            //        = RF 2.0 kHz, weak-RF 2.0 kHz, AF Tx LPF2 2.5 kHz,
-            //          6.25k mode, FM gain +6 dB.
-            val = 0x0058;
-            break;
-#endif
-
         default:
             val = 0x5C;
             break;
@@ -1635,11 +1625,16 @@ uint8_t BK4819_GetAfTxRx(void)
 }
 
 void BK4819_SetRxAudioGain(void) {
+    BK4819_SetAfDacGain(gEeprom.DAC_GAIN);
+}
+
+// REG_48 with the AF DAC gain (0 ~ 15) overridden, e.g. to scale the CW sidetone
+void BK4819_SetAfDacGain(uint8_t dacGain) {
     BK4819_WriteRegister(BK4819_REG_48,
         (11u << 12)                |     // ??? .. 0 ~ 15, doesn't seem to make any difference
         ( 0u << 10)                |     // AF Rx Gain-1
         (gEeprom.VOLUME_GAIN << 4) |     // AF Rx Gain-2
-        (gEeprom.DAC_GAIN    << 0));     // AF DAC Gain (after Gain-1 and Gain-2)
+        ((dacGain & 0x0F)    << 0));     // AF DAC Gain (after Gain-1 and Gain-2)
 }
 
 bool BK4819_GetFrequencyScanResult(uint32_t *pFrequency)

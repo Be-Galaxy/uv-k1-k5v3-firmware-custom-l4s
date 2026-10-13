@@ -19,6 +19,7 @@
 
 #include "am_fix.h"
 #include "app/cwkeyer.h"
+#include "app/cwrit.h"
 #include "app/dtmf.h"
 #ifdef ENABLE_FEAT_F4HWN_RXTX_LOG
     #include "app/rxtx_log.h"
@@ -798,6 +799,19 @@ void RADIO_SelectVfos(void)
     RADIO_SelectCurrentVfo();
 }
 
+#ifdef ENABLE_EXTRA_FILTER
+// False where the modulation has a single filter, so the wide/narrow bit does
+// nothing there: CW and USB, see RADIO_ResolveFilter()
+bool RADIO_HasFilterChoice(const VFO_Info_t *pVfo)
+{
+    return !(
+    #ifdef ENABLE_CW_MODULATOR
+        pVfo->Modulation == MODULATION_CW ||
+    #endif
+        pVfo->Modulation == MODULATION_USB);
+}
+#endif
+
 // Single place that turns the stored one-bit wide/narrow selection into an
 // actual RF filter. The bit means the same thing everywhere ("this channel is
 // the narrow one"); only this function knows what that costs in kilohertz, and
@@ -805,24 +819,20 @@ void RADIO_SelectVfos(void)
 //
 //   FM       wide 25k     narrow 12.5k  (SetNFM upgrades narrow to 6.25k)
 //   AM       wide 25k     narrow BW_AM
-//   CW/USB   wide 6.25k   narrow 2.0k   (SetNFM does not apply)
+//   CW/USB   6.25k only                 (SetNFM does not apply)
 //
-// CW and SSB never want 12.5k or wider, so their pair is shifted down a notch.
-// That is deliberately independent of SetNFM, which is documented as an FM
-// setting and has no business moving an SSB passband.
+// CW and SSB never want 12.5k or wider, so they use the 6.25k preset. That is
+// deliberately independent of SetNFM, which is documented as an FM setting and
+// has no business moving an SSB passband. There is no narrow CW/SSB filter: the
+// BK4829's narrower presets (2.0k on paper) measured no different from 6.25k in
+// CW, about 6.5-7 kHz either way, so the bit is left alone for FM and AM.
 BK4819_FilterBandwidth_t RADIO_ResolveFilter(const VFO_Info_t *pVfo)
 {
     const bool narrow = (pVfo->CHANNEL_BANDWIDTH != BANDWIDTH_WIDE);
 
 #ifdef ENABLE_EXTRA_FILTER
-    if (
-    #ifdef ENABLE_CW_MODULATOR
-        pVfo->Modulation == MODULATION_CW ||
-    #endif
-        pVfo->Modulation == MODULATION_USB)
-    {
-        return narrow ? BK4819_FILTER_BW_NARROWEST : BK4819_FILTER_BW_NARROWER;
-    }
+    if (!RADIO_HasFilterChoice(pVfo))
+        return BK4819_FILTER_BW_NARROWER;
 #endif
 
     if (pVfo->Modulation == MODULATION_AM)
@@ -891,16 +901,11 @@ void RADIO_SetupRegisters(bool switchToForeground)
         else
             Frequency = NoaaFrequencyTable[gNoaaChannel];
     #else
-        Frequency = gRxVfo->pRX->Frequency
-	#if ENABLE_CW_MODULATOR
-		- (gRxVfo->Modulation == MODULATION_CW && !gCW_CrossMode ? gEeprom.CW_TONE_FREQUENCY : 0) // CW BFO offset
-		;
-			// char buf[64];
-			// sprintf_(buf, "RX freq: %d Hz, offset: %d Hz\r\n", gRxVfo->pRX->Frequency * 10, (10 * gEeprom.CW_TONE_FREQUENCY));
-			// UART_Send(buf, strlen(buf));
-	#endif
-	;
+        Frequency = gRxVfo->pRX->Frequency;
     #endif
+	#ifdef ENABLE_CW_MODULATOR
+		Frequency = CW_RIT_RxFrequency(gRxVfo, Frequency);  // CW BFO offset plus RIT
+	#endif
     BK4819_SetFrequency(Frequency);
 
     // Keep the demodulator in sync when retuning without entering RX audio.
@@ -1081,9 +1086,7 @@ void RADIO_SetTxParameters(void)
 
 	uint32_t tx_frequency = gCurrentVfo->pTX->Frequency;
 #ifdef ENABLE_CW_MODULATOR
-	if (gTxVfo->Modulation == MODULATION_CW && gCW_CrossMode) {
-		tx_frequency += gEeprom.CW_TONE_FREQUENCY;
-	}
+	tx_frequency = CW_RIT_TxFrequency(gTxVfo, tx_frequency);  // cross-mode pitch plus XIT
 #endif
 	BK4819_SetFrequency(tx_frequency);
 
@@ -1498,7 +1501,7 @@ void RADIO_CW_BeginResume(void)
 
 	// Set local AF sidetone freq in Hz
 	BK4819_SetScrambleFrequencyControlWord(gEeprom.CW_TONE_FREQUENCY * 10);
-	BK4819_WriteRegister(BK4819_REG_70, BK4819_REG_70_TONE1_VALUE(CW_SidetoneLevelToGain(gEeprom.CW_SIDETONE_LEVEL)));
+	CW_ApplySidetoneGain();
 	
 	// Setup the Tx/Rx blocks for CW transmission
 	BK4819_EnableTXLink();
