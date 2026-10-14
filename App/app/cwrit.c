@@ -115,6 +115,13 @@ bool CW_RIT_IsAdjusting(void)
 
 static void ExitAdjust(void)
 {
+	// a zero offset left behind means "back on frequency", so switch both off.
+	// Only on close, so nudging through zero mid-adjust keeps the switches.
+	if (s_offset == 0) {
+		s_rit_on = false;
+		s_xit_on = false;
+	}
+
 	s_adjust_10ms = 0;
 	gUpdateDisplay = true;
 }
