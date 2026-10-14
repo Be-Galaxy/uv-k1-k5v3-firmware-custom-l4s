@@ -22,6 +22,10 @@
 #include "misc.h"
 #include "app/cwhardware.h"
 #include "settings.h"
+#include "audio.h"
+#ifdef ENABLE_CODE_PRACTICE
+#include "app/cpo.h"
+#endif
 #include "py32f071_ll_dma.h"
 #include "py32f071_ll_gpio.h"
 #include "py32f071_ll_bus.h"
@@ -473,6 +477,45 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     return true;
 }
 
+// Keypad lock with PTT lockout (SET LCK = PTT or ACTIONS+PTT) locks out CW key
+// input entirely, the same as the PTT button: nothing is keyed, not even the
+// local-only sidetone that break-in off would otherwise give. Operates on raw
+// reads, so the keyer FSMs just see the key go up and finish the current
+// element normally if the lock lands mid-character.
+//
+// A press while locked gets the same feedback as a locked PTT: double beep and
+// the unlock hint. While unlocked, keying counts as activity for auto keypad
+// lock - the keyer owns PTT and the paddles in CW mode, so none of it passes
+// through ProcessKey(), and the auto lock would otherwise lock the keyer out
+// in the middle of a QSO.
+bool CW_KeyInputLockedOut(bool pressed)
+{
+    static bool s_locked_pressed;
+
+    bool locked = false;
+#ifdef ENABLE_FEAT_F4HWN
+    locked = gEeprom.KEY_LOCK && (gSetting_set_lck & SET_LCK_PTT);
+#endif
+#ifdef ENABLE_CODE_PRACTICE
+    locked = locked && !gCW_CpoActive;  // practice never transmits
+#endif
+
+    if (!locked) {
+        s_locked_pressed = false;
+        if (pressed && gEeprom.AUTO_KEYPAD_LOCK)
+            gKeyLockCountdown = gEeprom.AUTO_KEYPAD_LOCK * 30;  // 15 seconds step
+        return false;
+    }
+
+    if (pressed && !s_locked_pressed) {
+        gBeepToPlay    = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        gKeypadLocked  = 4;  // 2 seconds
+        gUpdateDisplay = true;
+    }
+    s_locked_pressed = pressed;
+    return true;
+}
+
 // Read GPIO inputs based on configured mode
 void CW_ReadKeys(CW_Input *in)
 {
@@ -482,6 +525,11 @@ void CW_ReadKeys(CW_Input *in)
     // Read inputs using helper function
     if (!CW_ReadKeysForMode(gEeprom.CW_KEY_INPUT, &n_dit, &n_dah)) {
         // Handkey mode or invalid - no keyer input
+        n_dit = false;
+        n_dah = false;
+    }
+
+    if (CW_KeyInputLockedOut(n_dit || n_dah)) {
         n_dit = false;
         n_dah = false;
     }

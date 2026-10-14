@@ -47,6 +47,11 @@ void CW_ReadUSBPaddleRaw(bool *tip_out, bool *ring_out);
 // Read normalized paddle inputs (computes edges)
 void CW_ReadKeys(CW_Input *in);
 
+// Keypad-lock gate for raw CW key input (paddles, handkey, PTT-as-key). Pass
+// whether any key contact is closed right now; returns true when the input
+// must be ignored. See the definition for details.
+bool CW_KeyInputLockedOut(bool pressed);
+
 // Configure port pins for paddle interface
 void CW_ConfigurePortGround(bool enable);
 void CW_ConfigurePortRing(bool enable);

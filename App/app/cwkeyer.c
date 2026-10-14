@@ -750,6 +750,8 @@ CW_Action_t ptt_action(void)
         bool tip = false, ring = false;
         CW_ReadUSBPaddleRaw(&tip, &ring);
         ptt = tip || ring;
+        if (CW_KeyInputLockedOut(ptt))
+            ptt = false;
     } else if (gEeprom.CW_KEY_INPUT & CW_KEY_FLAG_PORT_GROUND) {
         // Port Handkey: either port contact (tip or ring) acts as a straight key.
         // (This branch is only reached for NO_KEYER modes - see the caller in
@@ -765,6 +767,8 @@ CW_Action_t ptt_action(void)
     } else {
         // Read PTT button (PC5) via wrapper (active low)
         ptt = GPIO_IsPttPressed();
+        if (CW_KeyInputLockedOut(ptt))
+            ptt = false;
     }
 
     if (ptt) {
