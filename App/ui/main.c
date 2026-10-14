@@ -2442,8 +2442,21 @@ void UI_DisplayMain(void)
 #if ENABLE_FEAT_F4HWN
         const uint8_t displayBandwidth = vfoInfo->CHANNEL_BANDWIDTH;
 
-        // CW and SSB have a single filter, so there's no width to show
-        if (RADIO_HasFilterChoice(vfoInfo))
+        // CW and SSB always run the 6.25k filter, so name it instead of W/N.
+        // A RIT/XIT tag takes its place while an offset is applied.
+        if (!RADIO_HasFilterChoice(vfoInfo))
+        {
+        #ifdef ENABLE_CW_MODULATOR
+            if (!(isMainVFO && vfoInfo->Modulation == MODULATION_CW && CW_RIT_TagVisible()))
+        #endif
+            {
+                if (gSetting_set_gui)
+                    UI_PrintStringSmallNormal("6k", LCD_WIDTH + 80, 0, line + 1);
+                else
+                    GUI_DisplaySmallest("6k", 91, line == 0 ? 17 : 49, false, true);
+            }
+        }
+        else
         {
         #ifdef ENABLE_FEAT_F4HWN_NARROWER
             // SetNFM upgrades FM's narrow to 6.25k, so "N+" says something
