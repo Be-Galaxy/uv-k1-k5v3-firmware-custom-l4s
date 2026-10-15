@@ -246,6 +246,7 @@
                 "ENABLE_FEAT_F4HWN_ACTION_PICKER": true,
                 "ENABLE_FEAT_F4HWN_FOXHUNT": false,
                 "ENABLE_FEAT_F4HWN_LOGO": true,
+                "ENABLE_FEAT_F4HWN_K5VIEWER": true,
                 "ENABLE_SWD": false,
                 "ENABLE_TX_WHEN_AM": true,
                 "ENABLE_F_CAL_MENU": true,
