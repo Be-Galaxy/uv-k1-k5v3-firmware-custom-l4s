@@ -907,11 +907,11 @@ _NR7Y_CW_HANG_10MS_DEFAULT = 30
 # the feature is compiled out, which is why those only need filtering out of the
 # displayed choices -- but the RESCUE_OPS block shifts everything after it, so the
 # index mapping has to be assembled per build instead of hardcoded.  With
-# RESCUE_OPS off the CW actions sit at 21-28, CODE PRACTICE at 29, FOX HUNT at 30,
-# then CW KEYER MODE, PROPER ROGER, CW SPEED, CW KEY INPUT and CW BREAK-IN at
-# 31-35; with it on everything from the CW actions moves up by 2.  Those last five
-# came after FOX HUNT shipped, so the firmware appends them to keep binds already
-# stored on their old numbers.
+# RESCUE_OPS off the CW actions sit at 21-28, CODE PRACTICE at 29, then CW KEYER
+# MODE, PROPER ROGER, CW SPEED, CW KEY INPUT and CW BREAK-IN at 30-34; with it on
+# everything from the CW actions moves up by 2.  Those last five came after FOX
+# HUNT shipped, so the firmware appends them past it, but the CW preset builds
+# without FOX HUNT, so they follow CODE PRACTICE directly.
 _NR7Y_ACTIONS_COMMON = [
     "NONE",            # 0:  ACTION_OPT_NONE
     "FLASHLIGHT",      # 1:  ACTION_OPT_FLASHLIGHT
@@ -958,13 +958,12 @@ _NR7Y_ACTIONS_CW = [
 ]
 
 # ENABLE_FEAT_F4HWN_BEAM, then ENABLE_FEAT_F4HWN_RXTX_LOG, then (since F4HWN
-# v5.9.0) ENABLE_FEAT_F4HWN_FOXHUNT close out the enum, in that order.  None of
-# them has a BUILD_OPTIONS bit, but they all sit past every conditional block
-# above, so guessing here cannot shift anything else.  The NR7Y CW presets build
-# FOX HUNT and leave BEAM / RF LOG out; the stock F4HWN editions carry all three.
-# The CW quick actions are appended after them (ENABLE_CW_MODULATOR again).
+# v5.9.0) ENABLE_FEAT_F4HWN_FOXHUNT, in that order.  None of them has a
+# BUILD_OPTIONS bit.  The stock F4HWN editions carry all three and nothing comes
+# after them.  On CW builds the CW quick actions are appended after them
+# (ENABLE_CW_MODULATOR again), so they shift with whatever is built; this list
+# follows the NR7Y CW preset, which leaves all three out.
 _NR7Y_ACTIONS_TAIL_CW = [
-    "FOX HUNT",
     "CW KEYER MODE",
     "PROPER ROGER",
     "CW SPEED",
