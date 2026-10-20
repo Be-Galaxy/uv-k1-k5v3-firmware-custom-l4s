@@ -61,7 +61,7 @@ class ProfilesTest(unittest.TestCase):
         data=self.lib.Host_SatelliteData();data[7]^=1
         loaded=Config();self.assertFalse(self.lib.Host_LoadSatellite(key,ctypes.byref(loaded)))
         self.assertEqual(0,self.lib.Host_SaveSatellite(key,ctypes.byref(config)))
-        data[4]=2
+        data[4]=3
         before=bytes(data[:56*64])
         self.assertEqual(12,self.lib.Host_SaveSatellite(key,ctypes.byref(config)))
         self.assertEqual(before,bytes(data[:56*64]))

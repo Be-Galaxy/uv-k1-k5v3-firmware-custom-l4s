@@ -7,6 +7,7 @@
 #include "driver/keyboard.h"
 #include "l4s_protocol.h"
 #include "l4s_store.h"
+#include "l4s_macros.h"
 void L4S_ControlTick(void);
 bool L4S_Active(void);
 bool L4S_BlockPhysicalPtt(void);
@@ -17,4 +18,6 @@ const L4S_State *L4S_GetState(void);
 void L4S_ProcessKeys(KEY_Code_t key, bool pressed, bool held);
 const L4S_MenuState *L4S_GetMenu(void);
 const L4S_Store *L4S_GetStore(void);
+const L4S_Macros *L4S_GetMacros(void);
+void L4S_RecordLinkError(bool crc);
 #endif

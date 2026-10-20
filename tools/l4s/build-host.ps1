@@ -11,6 +11,8 @@ New-Item -ItemType Directory -Path $hostOutput -Force | Out-Null
     (Join-Path $repoRoot 'App/app/l4s_io.c') `
     (Join-Path $repoRoot 'App/app/l4s_settings.c') `
     (Join-Path $repoRoot 'App/app/l4s_store.c') `
+    (Join-Path $repoRoot 'App/app/l4s_macros.c') `
+    (Join-Path $PSScriptRoot 'macros_host.c') `
     (Join-Path $PSScriptRoot 'store_host.c') `
     (Join-Path $PSScriptRoot 'io_host.c') `
     (Join-Path $repoRoot 'App/ui/l4s.c') `

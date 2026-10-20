@@ -471,7 +471,7 @@ bool CW_StartRemoteTextPlayback(const uint8_t *text, uint8_t length)
     memcpy(s_playback_buf,text,length); s_playback_buf[length]=0;
     s_play_long_dah=false;
     CW_ClearTxDisplay();
-    CW_BeginPlayback(false,0);
+    CW_BeginPlayback(false,gEeprom.CW_FARNSWORTH_WPM);
     return true;
 }
 

@@ -60,25 +60,35 @@ static uint8_t profile(uint8_t operation,const uint8_t *p) {
     memcpy(state.satellite_name,p+32,16);state.satellite_name[16]=0;
     state.profile_selected=true;state.profile_generation++;
     state.pair_ready=state.mode_ready=false;state.context_valid=false;state.user_modified=false;
+    state.pass_phase=0;state.pass_seconds=0;
     return 0;
 }
 static uint8_t store_command(const uint8_t *p,size_t n) {
-    uint8_t result=Host_StoreCommand(p,n,!tx && !active && !menu.open && !state.tx_window_open,&state.correction_step_hz);
-    state.store_busy=L4S_StoreBusy(L4S_GetStore());if(result==1)state.pair_ready=false;return result;
+    uint8_t result=Host_StoreCommand(p,n,!tx && !active && !menu.open && !state.tx_window_open && !L4S_MacrosBusy(L4S_GetMacros()),&state.correction_step_hz);
+    state.store_busy=L4S_StoreBusy(L4S_GetStore())||L4S_MacrosBusy(L4S_GetMacros());if(result==1)state.pair_ready=false;return result;
 }
 static size_t store_reply(const uint8_t *p,uint8_t *out) {
     size_t n=Host_StoreReply(p,state.correction_step_hz,out);
     if(!state.saved_settings_valid || !L4S_ConfigEqual(&state.settings,&state.saved_settings))out[4]|=8;
     return n;
 }
+uint8_t Host_MacrosCommand(const uint8_t *,size_t,uint32_t,bool);
+size_t Host_MacrosReply(const uint8_t *,size_t,uint8_t *);
+void Host_MacrosTick(uint32_t,uint32_t);
+static bool apply_settings(const L4S_UserConfig *c){(void)c;return !tx&&!active;}
+static uint8_t macro_command(const uint8_t *p,size_t n){
+    uint8_t result=Host_MacrosCommand(p,n,state.session,!tx&&!active&&!menu.open&&!state.tx_window_open&&!L4S_StoreBusy(L4S_GetStore()));
+    state.store_busy=L4S_StoreBusy(L4S_GetStore())||L4S_MacrosBusy(L4S_GetMacros());if(result==1)state.pair_ready=false;return result;
+}
 static const L4S_Ops ops={enter,leave,validate,apply,mode,tone,ptt,stop,cw,
-                         tx_state,cw_active,cw_failed,cw_progress,can_retune,profile,store_command,store_reply};
+                         tx_state,cw_active,cw_failed,cw_progress,can_retune,profile,store_command,store_reply,
+                         apply_settings,macro_command,Host_MacrosReply};
 void Host_StoreEnsure(void);
 EXPORT void Host_Reset(void) { Host_StoreEnsure();tx=progress=0;active=denied=false;starts=leaves=writes=0;clock_ms=0;key_latch=false;memset(&menu,0,sizeof(menu));L4S_Init(&state,&ops);observed_store_generation=L4S_GetStore()->generation; }
 EXPORT void Host_Tick(uint32_t now) {
     clock_ms=now;
     L4S_Tick(&state,now);
-    Host_StoreTick(now);state.store_busy=L4S_StoreBusy(L4S_GetStore());
+    Host_StoreTick(now);Host_MacrosTick(now,state.session);state.store_busy=L4S_StoreBusy(L4S_GetStore())||L4S_MacrosBusy(L4S_GetMacros());
     if(L4S_GetStore()->generation!=observed_store_generation) {
         observed_store_generation=L4S_GetStore()->generation;state.pair_ready=false;
         if(state.profile_selected) {
@@ -102,6 +112,7 @@ EXPORT size_t Host_Handle(const uint8_t *body,size_t n,uint32_t now,uint8_t *out
     Host_Tick(now); return L4S_Handle(&state,body,n,now,out);
 }
 EXPORT void Host_Deny(uint8_t value) { denied=value!=0; }
+EXPORT uint8_t Host_LocalCw(const uint8_t *text,uint8_t n,uint32_t now){return L4S_LocalCw(&state,text,n,now);}
 EXPORT void Host_LocalStop(void) { L4S_Abort(&state,L4S_CANCELLED); }
 EXPORT unsigned Host_Starts(void) { return starts; }
 EXPORT unsigned Host_Writes(void) { return writes; }

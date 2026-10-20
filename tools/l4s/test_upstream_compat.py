@@ -27,7 +27,7 @@ class UpstreamCompatibilityTest(unittest.TestCase):
         keyer = (root / 'App/app/cwkeyer.c').read_text(encoding='utf-8')
         remote = keyer.split('bool CW_StartRemoteTextPlayback(', 1)[1].split('void CW_StopPlayback(', 1)[0]
         self.assertIn('s_play_long_dah=false;', remote)
-        self.assertIn('CW_BeginPlayback(false,0);', remote)
+        self.assertIn('CW_BeginPlayback(false,gEeprom.CW_FARNSWORTH_WPM);', remote)
         control = (root / 'App/app/l4s_control.c').read_text(encoding='utf-8')
         self.assertIn('CW_StartRemoteTextPlayback(text,length)', control)
         self.assertIn('gTxTimeoutReached || CW_GuardIsLocked()', control)

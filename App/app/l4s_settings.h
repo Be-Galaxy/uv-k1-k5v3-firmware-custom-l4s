@@ -5,8 +5,8 @@
 #include <stdbool.h>
 #include "driver/keyboard.h"
 #define L4S_PROFILE_SIZE 32u
-#define L4S_MENU_ITEMS 15u
-#define L4S_MENU_SAVE 14u
+#define L4S_MENU_ITEMS 18u
+#define L4S_MENU_SAVE 17u
 #define L4S_SAT_PROFILE_ADDR 0x00A200u
 #define L4S_SAT_PROFILE_SIZE 64u
 #define L4S_SAT_PROFILE_COUNT 56u
@@ -15,6 +15,7 @@ typedef struct {
     uint8_t mode, power, wpm, pitch, volume, tx_tone, rx_tone, arm_tone, squelch;
     uint32_t rx_base_hz, tx_base_hz;
     int32_t rx_correction_hz, tx_correction_hz;
+    uint8_t cw_hang, cw_keyer, cw_spacing;
 } L4S_UserConfig;
 typedef struct {
     L4S_UserConfig draft;
@@ -47,4 +48,5 @@ void L4S_FormatTone(uint16_t tenths, char *text, unsigned size);
 /* MENU enters edit; arrows navigate/edit; final item applies; EXIT cancels without ending session. */
 bool L4S_MenuKey(L4S_MenuState *menu, KEY_Code_t key, bool busy);
 void L4S_MenuValue(const L4S_MenuState *menu, unsigned item, char *text, unsigned size);
+uint8_t L4S_ShortcutMenuIndex(KEY_Code_t key);
 #endif

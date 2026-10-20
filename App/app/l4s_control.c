@@ -35,6 +35,7 @@ static volatile bool usb_lost;
 static L4S_MenuState menu;
 static L4S_UserConfig profile;
 static L4S_Store store;
+static L4S_Macros macros;
 static L4S_UserConfig pending_config;
 static bool local_save_pending,completion_handled;
 static bool apply_user_config(const L4S_UserConfig *config);
@@ -43,7 +44,7 @@ static void setup_receive(void);
 static void profile_read(uint32_t address,void *data,unsigned size);
 static struct {
     VFO_Info_t vfo[2];
-    uint8_t tx_vfo, cross, dual, battery_save, key_input, wpm, pitch, volume, squelch;
+    uint8_t tx_vfo, cross, dual, battery_save, key_input, wpm, pitch, volume, squelch, cw_hang, cw_keyer, cw_spacing;
     bool vox, breakin, cross_mode, monitor;
     int8_t scan;
 } saved;
@@ -51,8 +52,10 @@ static struct {
 bool L4S_Active(void) { return state.session != 0; }
 const L4S_State *L4S_GetState(void) { return &state; }
 const L4S_MenuState *L4S_GetMenu(void) { return &menu; }
-bool L4S_BlockPhysicalPtt(void) { return L4S_Active() || release_latch || L4S_StoreBusy(&store); }
+bool L4S_BlockPhysicalPtt(void) { return L4S_Active() || release_latch || L4S_StoreBusy(&store) || L4S_MacrosBusy(&macros); }
 const L4S_Store *L4S_GetStore(void) {return &store;}
+const L4S_Macros *L4S_GetMacros(void) {return &macros;}
+void L4S_RecordLinkError(bool crc) {if(crc)state.crc_errors++;else state.length_errors++;}
 void L4S_UsbLost(void) { usb_lost = true; }
 
 static uint8_t tx_state(void)
@@ -79,7 +82,7 @@ static void stop_tx(void)
 
 static bool enter(void)
 {
-    if (L4S_StoreBusy(&store) || PY25Q16_ProfileBusy() || tx_state() || gCW_Recording || gScreenToDisplay != DISPLAY_MAIN ||
+    if (L4S_StoreBusy(&store) || L4S_MacrosBusy(&macros) || PY25Q16_ProfileBusy() || tx_state() || gCW_Recording || gScreenToDisplay != DISPLAY_MAIN ||
         SCANNER_IsScanning() || gCssBackgroundScan || gRequestSaveSettings || gRequestSaveVFO ||
         (gEeprom.CW_KEY_INPUT & CW_KEY_FLAG_USB_PORT) || GPIO_IsPttPressed() || release_latch ||
         gKeyReading0 != KEY_INVALID || gKeyReading1 != KEY_INVALID)
@@ -92,6 +95,7 @@ static bool enter(void)
     saved.wpm=gEeprom.CW_KEY_WPM; saved.breakin=gEeprom.CW_BREAKIN_ENABLE;
     saved.pitch=gEeprom.CW_TONE_FREQUENCY; saved.volume=gEeprom.CW_SIDETONE_LEVEL;
     saved.squelch=gEeprom.SQUELCH_LEVEL;
+    saved.cw_hang=gEeprom.CW_HANG_10MS;saved.cw_keyer=gEeprom.CW_KEYER_MODE;saved.cw_spacing=gEeprom.CW_FARNSWORTH_WPM;
     saved.cross_mode=gCW_CrossMode; saved.monitor=gMonitor; saved.scan=gScanStateDir;
     VFO_Info_t original_rx=*gRxVfo, original_tx=*gTxVfo;
     state.applied=(L4S_Pair){original_rx.pRX->Frequency*10, original_tx.pTX->Frequency*10, 0, false};
@@ -133,7 +137,7 @@ static bool enter(void)
 
 static void leave(void)
 {
-    L4S_StoreCancel(&store);local_save_pending=false;
+    L4S_StoreCancel(&store);L4S_MacrosCancel(&macros);local_save_pending=false;
     memcpy(gEeprom.VfoInfo,saved.vfo,sizeof(saved.vfo));
     gEeprom.TX_VFO=saved.tx_vfo; gEeprom.CROSS_BAND_RX_TX=saved.cross;
     gEeprom.DUAL_WATCH=saved.dual; gEeprom.BATTERY_SAVE=saved.battery_save;
@@ -141,6 +145,7 @@ static void leave(void)
     gEeprom.CW_KEY_WPM=saved.wpm; gEeprom.CW_BREAKIN_ENABLE=saved.breakin;
     gEeprom.CW_TONE_FREQUENCY=saved.pitch; gEeprom.CW_SIDETONE_LEVEL=saved.volume;
     gEeprom.SQUELCH_LEVEL=saved.squelch;
+    gEeprom.CW_HANG_10MS=saved.cw_hang;gEeprom.CW_KEYER_MODE=saved.cw_keyer;gEeprom.CW_FARNSWORTH_WPM=saved.cw_spacing;
     gCW_CrossMode=saved.cross_mode;
     RADIO_SelectVfos(); gMonitor=saved.monitor; RADIO_SetupRegisters(true);
     if(saved.monitor) APP_StartListening(FUNCTION_MONITOR);
@@ -220,6 +225,7 @@ static bool apply_user_config(const L4S_UserConfig *c)
     if(fm) gRxVfo->CHANNEL_BANDWIDTH=gTxVfo->CHANNEL_BANDWIDTH=c->mode==3 ? BANDWIDTH_NARROW : BANDWIDTH_WIDE;
     gTxVfo->OUTPUT_POWER=c->power;
     gEeprom.CW_KEY_WPM=c->wpm;gEeprom.CW_TONE_FREQUENCY=c->pitch;gEeprom.CW_SIDETONE_LEVEL=L4S_NativeSidetoneLevel(c->volume);
+    gEeprom.CW_HANG_10MS=c->cw_hang?c->cw_hang:30;gEeprom.CW_KEYER_MODE=c->cw_hang?c->cw_keyer:1;gEeprom.CW_FARNSWORTH_WPM=c->cw_spacing;
     gEeprom.SQUELCH_LEVEL=c->squelch;
     apply_tone(&gTxVfo->freq_config_TX,fm ? c->tx_tone : 0);
     apply_tone(&gRxVfo->freq_config_RX,fm ? c->rx_tone : 0);
@@ -304,33 +310,44 @@ static uint8_t select_profile(uint8_t operation,const uint8_t *p)
     memcpy(state.context_key,p,16);memcpy(state.saved_key,p,16);
     memcpy(state.satellite_name,p+32,16);state.satellite_name[16]=0;
     state.saved_settings_valid=found;state.profile_selected=true;state.profile_generation++;
-    state.context_valid=false;state.pair_ready=state.mode_ready=false;state.user_modified=false;
+    state.context_valid=false;state.pass_phase=0;state.pass_seconds=0;
+    state.pair_ready=state.mode_ready=false;state.user_modified=false;
     state.arm_next=false;state.arm_active=false;
     state.rx_mode=candidate.mode==0 || candidate.mode==3 ? L4S_FM : candidate.mode==1 ? L4S_CW_MODE : L4S_USB;
     state.tx_mode=candidate.mode==0 || candidate.mode==3 ? L4S_FM : L4S_CW_MODE;
     gUpdateDisplay=true;return L4S_APPLIED;
 }
 static uint8_t store_command(const uint8_t *p,size_t n) {
-    bool allowed=!state.tx_window_open && can_retune() && !GPIO_IsPttPressed() && !menu.open;
+    bool allowed=!state.tx_window_open && can_retune() && !GPIO_IsPttPressed() && !menu.open && !L4S_MacrosBusy(&macros);
     uint8_t result=L4S_StoreCommand(&store,p,n,allowed,&state.correction_step_hz);
     if(result==L4S_ACCEPTED){state.pair_ready=false;completion_handled=false;}
-    state.store_busy=L4S_StoreBusy(&store);return result;
+    state.store_busy=L4S_StoreBusy(&store)||L4S_MacrosBusy(&macros);return result;
 }
 static size_t store_reply(const uint8_t *p,uint8_t *out) {
     size_t n=L4S_StoreReply(&store,p,state.correction_step_hz,out);
     if(!state.saved_settings_valid || !L4S_ConfigEqual(&state.settings,&state.saved_settings))out[4]|=8;
     return n;
 }
+static uint8_t macro_command(const uint8_t *p,size_t n) {
+    bool allowed=!L4S_StoreBusy(&store)&&!state.tx_window_open&&!state.owner&&!tx_state()&&!menu.open&&can_retune();
+    uint8_t result=L4S_MacrosCommand(&macros,p,n,state.session,allowed);
+    state.store_busy=L4S_StoreBusy(&store)||L4S_MacrosBusy(&macros);if(result==1)state.pair_ready=false;
+    return result;
+}
+static size_t macro_reply(const uint8_t *p,size_t n,uint8_t *out){return L4S_MacrosReply(&macros,p,n,out);}
 static const L4S_Ops ops={enter,leave,validate_pair,apply_pair,set_mode,tone,ptt_on,stop_tx,
-                         cw_start,tx_state,cw_active,cw_failed,cw_progress,can_retune,select_profile,store_command,store_reply};
+                         cw_start,tx_state,cw_active,cw_failed,cw_progress,can_retune,select_profile,store_command,store_reply,
+                         apply_user_config,macro_command,macro_reply};
 
 void L4S_ControlTick(void)
 {
-    if (!initialized) { L4S_Init(&state,&ops);L4S_StoreInit(&store,&store_ops);initialized=true; }
+    if (!initialized) { L4S_Init(&state,&ops);L4S_StoreInit(&store,&store_ops);L4S_MacrosInit(&macros,&store_ops);initialized=true; }
     /* Expire the session before a flash commit or a newly pressed local PTT. */
-    if(usb_lost) {L4S_Abort(&state,L4S_CANCELLED);usb_lost=false;}
+    if(usb_lost) {state.usb_losses++;L4S_Abort(&state,L4S_CANCELLED);usb_lost=false;}
     L4S_Tick(&state,millis());
     L4S_StoreTick(&store,millis());
+    L4S_MacrosTick(&macros,millis(),state.session);
+    state.rssi=gVFO_RSSI_bar_level[gRxVfo==&gEeprom.VfoInfo[1]];
     if(store.phase==L4S_STORE_DONE && !completion_handled && !GPIO_IsPttPressed() && can_retune()) {
         if(state.session) {
             L4S_UserConfig current;bool found;
@@ -354,7 +371,7 @@ void L4S_ControlTick(void)
     if((store.phase==L4S_STORE_FAILED || store.phase==L4S_STORE_CANCELLED) && local_save_pending) {
         menu.error=store.error;local_save_pending=false;gUpdateDisplay=true;
     }
-    state.store_busy=L4S_StoreBusy(&store) || (store.phase==L4S_STORE_DONE && !completion_handled);
+    state.store_busy=L4S_StoreBusy(&store) || L4S_MacrosBusy(&macros) || (store.phase==L4S_STORE_DONE && !completion_handled);
     if (release_latch && !GPIO_IsPttPressed()) release_latch=false;
     if (state.session) {
         const bool timed_out = state.tx_window_open && (uint32_t)(millis()-state.tx_started) >=
@@ -380,6 +397,12 @@ void L4S_ControlTick(void)
 
 bool L4S_LocalKey(KEY_Code_t key, bool pressed, bool held)
 {
+    if(L4S_Active()&&L4S_MacrosBusy(&macros)){
+        if(pressed&&!held&&key==KEY_MENU)L4S_MacrosConfirm(&macros);
+        if(pressed&&!held&&key==KEY_EXIT){L4S_MacrosCancel(&macros);key_release_latch=true;}
+        if(!pressed)key_release_latch=false;
+        return true;
+    }
     if(!L4S_Active() && L4S_StoreBusy(&store))return true;
     if(L4S_Active() && state.store_busy) {
         if(!pressed)key_release_latch=false;
@@ -417,6 +440,19 @@ bool L4S_LocalKey(KEY_Code_t key, bool pressed, bool held)
             }
             return true;
         }
+        if(key==KEY_SIDE1){if(!state.tx_window_open&&can_retune()){if(pressed){gMonitor=true;APP_StartListening(FUNCTION_MONITOR);}else setup_receive();}return true;}
+        if(pressed&&!held&&key>=KEY_1&&key<=KEY_8&&state.tx_mode==L4S_CW_MODE){
+            uint8_t text[L4S_MACRO_TEXT];uint8_t n=L4S_MacrosRead(&macros,key-KEY_1,text);
+            state.error=n?L4S_LocalCw(&state,text,n,millis()):L4S_NOT_READY;
+            if(state.error==L4S_ACCEPTED)state.error=0;
+            gUpdateDisplay=true;return true;
+        }
+        uint8_t shortcut=L4S_ShortcutMenuIndex(key);
+        if(pressed&&!held&&shortcut!=255&&state.mode_ready){
+            menu=(L4S_MenuState){.draft=state.settings,.open=true,.arm_next=state.arm_next,.step_hz=state.step_hz,
+                .correction_step_hz=state.correction_step_hz,.index=shortcut};
+            state.menu_open=true;gUpdateDisplay=true;return true;
+        }
         if (key==KEY_MENU && pressed) {
             if(!state.mode_ready){gUpdateDisplay=true;return true;}
             menu=(L4S_MenuState){.draft=state.settings,.open=true,.arm_next=state.arm_next,.step_hz=state.step_hz,
@@ -435,7 +471,7 @@ void L4S_ProcessKeys(KEY_Code_t key, bool pressed, bool held)
 bool L4S_HandleUart(uint32_t port, const uint8_t *body, size_t size)
 {
     uint16_t cmd=size>=2 ? L4S_Read16(body) : 0;
-    if (cmd<L4S_HELLO || cmd>L4S_PROFILE_STORE) {
+    if (cmd<L4S_HELLO || cmd>L4S_PASS_INFO) {
         if(L4S_StoreBusy(&store))return true;
         if (L4S_Active()) {
             if(port!=UART_PORT_VCP)return true;
@@ -448,6 +484,6 @@ bool L4S_HandleUart(uint32_t port, const uint8_t *body, size_t size)
     uint8_t reply[L4S_MAX_BODY];
     static uint8_t frame[L4S_MAX_BODY+8];
     size_t n=L4S_Handle(&state,body,size,millis(),reply);
-    if (n) cdc_acm_l4s_reply(frame,L4S_EncodeFrame(reply,n,frame));
+    if (n && !cdc_acm_l4s_reply(frame,L4S_EncodeFrame(reply,n,frame)))state.reply_drops++;
     return true;
 }

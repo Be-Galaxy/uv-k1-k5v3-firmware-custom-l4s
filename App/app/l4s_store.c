@@ -72,7 +72,7 @@ uint8_t L4S_StoreUpsert(L4S_Store *s,const uint8_t key[16],const char *name,cons
         L4S_StoreRead(s,i,record);
         if(blank(record,64)) {if(empty<0)empty=i;}
         else if(!memcmp(record,"L4SM",4) && !memcmp(record+14,key,16)) {
-            if(record[4]!=1)return 12;
+            if(record[4]!=1 && record[4]!=2)return 12;
             target=i;break;
         }
     }

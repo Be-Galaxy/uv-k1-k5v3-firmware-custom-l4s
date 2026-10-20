@@ -10,7 +10,10 @@ void L4S_Write32(uint8_t *p, uint32_t n) { L4S_Write16(p,n); L4S_Write16(p+2,n>>
 
 uint16_t L4S_Crc(const uint8_t *p, size_t n)
 {
-    uint16_t crc = 0;
+    return L4S_CrcContinue(0,p,n);
+}
+uint16_t L4S_CrcContinue(uint16_t crc,const uint8_t *p,size_t n)
+{
     while (n--) {
         crc ^= (uint16_t)*p++ << 8;
         for (unsigned j = 0; j < 8; ++j) crc = (crc << 1) ^ ((crc & 0x8000) ? 0x1021 : 0);
@@ -47,11 +50,13 @@ static void stop(L4S_State *s, uint8_t error)
     s->arm_active=false;
     s->pair_ready = false; /* Any subsequent TX needs a newly applied frequency revision. */
     s->error = error;
+    s->stop_reason=error;s->local_macro=false;
 }
 
 void L4S_Abort(L4S_State *s, uint8_t reason)
 {
     if (!s->session) return;
+    s->aborts++;
     stop(s, reason);
     s->retired_session = s->session;
     s->session = 0;
@@ -87,12 +92,17 @@ uint8_t L4S_LocalPtt(L4S_State *s, bool pressed, uint32_t now)
 void L4S_Tick(L4S_State *s, uint32_t now)
 {
     if (!s->session) return;
+    if(s->pass_phase && (uint32_t)(now-s->pass_updated)>=1000){
+        uint32_t seconds=(now-s->pass_updated)/1000;s->pass_updated+=seconds*1000;
+        s->pass_seconds=seconds>s->pass_seconds?0:s->pass_seconds-seconds;
+    }
     if ((uint32_t)(now - s->last_alive) >= L4S_TIMEOUT_MS) { L4S_Abort(s, L4S_TIMEOUT); return; }
     if (s->owner == L4S_TX_CW) {
         if (s->ops->cw_failed()) {
             stop(s, L4S_TX_REJECTED); s->cw_state = L4S_CW_FAILED;
         } else if (!s->ops->cw_active()) {
             s->ops->stop(); s->owner = L4S_TX_OFF; s->cw_state = L4S_CW_DONE;
+            if(s->local_macro)stop(s,0);
         } else s->cw_state = L4S_CW_SENDING;
     } else if ((s->owner == L4S_TX_VOICE || s->owner == L4S_TX_LOCAL) && s->ops->tx_state() == L4S_TX_OFF) {
         stop(s, L4S_TX_REJECTED);
@@ -117,6 +127,22 @@ static size_t snapshot(L4S_State *s, uint8_t *p)
 static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
 {
     switch (cmd) {
+    case L4S_DIAGNOSTICS:return n==0?L4S_APPLIED:L4S_BAD_LENGTH;
+    case L4S_PASS_INFO:
+        if(n!=5)return L4S_BAD_LENGTH;
+        if(p[0]>3||L4S_Read32(p+1)>604800u)return L4S_RANGE;
+        s->pass_phase=p[0];s->pass_seconds=L4S_Read32(p+1);return L4S_APPLIED;
+    case L4S_CW_OPTIONS:{
+        if(n==1&&p[0]==0)return L4S_APPLIED;
+        if(n!=7||p[0]!=1)return L4S_BAD_LENGTH;
+        if(s->menu_open||s->store_busy||s->tx_window_open||s->owner||s->ops->tx_state()||!s->ops->can_retune())return L4S_BUSY;
+        if(!s->profile_selected||!s->ops->apply_settings)return L4S_NOT_READY;
+        L4S_UserConfig c=s->settings;c.wpm=p[1];c.pitch=p[2];c.volume=p[3];c.cw_hang=p[4];c.cw_keyer=p[5];c.cw_spacing=p[6];
+        if(!c.cw_hang||!L4S_ValidConfig(&c))return L4S_RANGE;
+        if(!s->ops->apply_settings(&c))return L4S_BUSY;
+        s->settings=c;s->user_modified=true;s->profile_generation++;s->pair_ready=false;return L4S_APPLIED;
+    }
+    case L4S_MACROS:return s->ops->macros?s->ops->macros(p,n):L4S_UNSUPPORTED;
     case L4S_PROFILE_STORE: {
         uint8_t result=s->ops->store ? s->ops->store(p,n) : L4S_UNSUPPORTED;
         if(result==L4S_APPLIED && n && p[0]==7)s->pair_ready=false;
@@ -220,12 +246,23 @@ static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
     }
 }
 
+uint8_t L4S_LocalCw(L4S_State *s,const uint8_t *text,uint8_t length,uint32_t now)
+{
+    L4S_Tick(s,now);if(!s->session)return L4S_BAD_SESSION;
+    if(!length||length>L4S_MAX_TEXT)return L4S_RANGE;
+    uint8_t p[L4S_MAX_TEXT+2];p[0]=s->settings.wpm;p[1]=length;memcpy(p+2,text,length);
+    uint8_t result=execute(s,L4S_CW,p,length+2);
+    if(result==L4S_ACCEPTED){s->tx_window_open=true;s->local_macro=true;s->tx_started=now;s->error=0;}
+    else s->error=result;
+    return result;
+}
 size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now, uint8_t *out)
 {
-    if (length < 12 || length > L4S_MAX_BODY || L4S_Read16(body+2) != length - 4) return 0;
+    if (length < 12 || length > L4S_MAX_BODY || L4S_Read16(body+2) != length - 4) {s->length_errors++;return 0;}
     const uint16_t cmd=L4S_Read16(body), seq=L4S_Read16(body+6);
     const uint32_t session=L4S_Read32(body+8);
-    if (cmd < L4S_HELLO || cmd > L4S_PROFILE_STORE) return 0;
+    if (cmd < L4S_HELLO || cmd > L4S_PASS_INFO) return 0;
+    s->requests++;
     L4S_Tick(s, now);
     uint8_t result=L4S_APPLIED;
     if (body[4] != L4S_VERSION || body[5] != 0) result=L4S_UNSUPPORTED;
@@ -239,7 +276,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
             s->session=session; s->have_seq=false; s->applied.revision=0;
             s->pair_ready=s->mode_ready=false; s->cw_state=L4S_CW_IDLE;
             s->error=0; s->last_alive=now;
-            s->context_valid=false;
+            s->context_valid=false;s->pass_phase=0;
         }
     } else if (!s->session || session != s->session) result=L4S_BAD_SESSION;
     else {
@@ -252,12 +289,16 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
             result=execute(s,cmd,body+12,length-12);
             if (result<=L4S_ACCEPTED && (cmd==L4S_CW || (cmd==L4S_PTT && body[12]==1)) &&
                 !s->tx_window_open) { s->tx_window_open=true; s->tx_started=now; }
-            if (result <= L4S_ACCEPTED) s->last_alive=now;
+            if (result <= L4S_ACCEPTED) {
+                uint32_t gap=now-s->last_alive;if(gap>s->max_gap)s->max_gap=gap;
+                s->last_alive=now;if(cmd==L4S_PASS_INFO)s->pass_updated=now;
+            }
         }
         if (!s->have_seq || (int16_t)(seq-s->last_seq) >= 0) {
             s->last_seq=seq; s->last_cmd=cmd; s->last_hash=hash; s->last_result=result; s->have_seq=true;
         }
     }
+    if(result>L4S_ACCEPTED){s->rejected++;s->last_rejection=result;}
     L4S_Write16(out,cmd | 0x8000); out[4]=L4S_VERSION; out[5]=result;
     L4S_Write16(out+6,seq); L4S_Write32(out+8,s->session);
     size_t data_size;
@@ -265,6 +306,9 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
         uint8_t *p=out+12;
         memcpy(p,"L4S1",4); p[4]=3; /* UV-K1 / UV-K5 V3 shared firmware */
         uint32_t features=L4S_CAP_PAIR|L4S_CAP_PTT|L4S_CAP_CW|L4S_CAP_TONE|L4S_CAP_CONTEXT|L4S_CAP_SETTINGS|L4S_CAP_PROFILES|L4S_CAP_STORE;
+        features|=L4S_CAP_DIAGNOSTICS|L4S_CAP_PASS_INFO;
+        if(s->ops->apply_settings)features|=L4S_CAP_CW_OPTIONS;
+        if(s->ops->macros)features|=L4S_CAP_MACROS;
         L4S_Write32(p+5,features);
         L4S_Write16(p+9,10); p[11]=L4S_MAX_TEXT; p[12]=10; p[13]=45;
         L4S_Write16(p+14,L4S_TIMEOUT_MS);
@@ -278,6 +322,17 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
 #endif
         p[40]=0x0f; p[41]=0x09; /* RX FM/AM/USB/CW; TX FM/CW only. */
         data_size=42;
+    } else if(cmd==L4S_DIAGNOSTICS && result==L4S_APPLIED) {
+        uint8_t *p=out+12;p[0]=1;p[1]=s->stop_reason;p[2]=s->last_rejection;p[3]=s->rssi;
+        uint32_t counters[]={s->requests,s->rejected,s->aborts,s->usb_losses,s->reply_drops,s->max_gap,s->crc_errors,s->length_errors};
+        for(unsigned i=0;i<8;i++)L4S_Write32(p+4+i*4,counters[i]);
+        data_size=36;
+    } else if(cmd==L4S_CW_OPTIONS && result==L4S_APPLIED) {
+        uint8_t *p=out+12;p[0]=1;p[1]=s->settings.wpm;p[2]=s->settings.pitch;p[3]=s->settings.volume;
+        p[4]=s->settings.cw_hang?s->settings.cw_hang:30;p[5]=s->settings.cw_hang?s->settings.cw_keyer:1;
+        p[6]=s->settings.cw_spacing;p[7]=s->user_modified;data_size=8;
+    } else if(cmd==L4S_MACROS && result<=L4S_ACCEPTED && s->ops->macros_reply) {
+        data_size=s->ops->macros_reply(body+12,length-12,out+12);
     } else if(cmd==L4S_PROFILE_STORE && result<=L4S_ACCEPTED && s->ops->store_reply) {
         data_size=s->ops->store_reply(body+12,out+12);
     } else {

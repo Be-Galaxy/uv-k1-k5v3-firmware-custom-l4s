@@ -731,6 +731,9 @@ bool UART_IsCommandAvailable(uint32_t Port)
 
     if ((Size + 8u) > ReadBufSize)
     {
+#ifdef ENABLE_L4S_CONTROL
+        if(Port==UART_PORT_VCP&&L4S_Active())L4S_RecordLinkError(false);
+#endif
         *pReadPointer = DmaLength;
         return false;
     }
@@ -743,6 +746,9 @@ bool UART_IsCommandAvailable(uint32_t Port)
 
     if (ReadBuf[TailIndex] != 0xDC || ReadBuf[DMA_INDEX(TailIndex, 1, ReadBufSize)] != 0xBA)
     {
+#ifdef ENABLE_L4S_CONTROL
+        if(Port==UART_PORT_VCP&&L4S_Active())L4S_RecordLinkError(false);
+#endif
         *pReadPointer = DmaLength;
         return false;
     }
@@ -788,7 +794,11 @@ bool UART_IsCommandAvailable(uint32_t Port)
     if (Port == UART_PORT_VCP) l4s_vcp_size=Size;
     else l4s_uart_size=Size;
 #endif
-    return CRC_Calculate(pUART_Command->Buffer, Size) == Crc;
+    bool crc_ok=CRC_Calculate(pUART_Command->Buffer, Size)==Crc;
+#ifdef ENABLE_L4S_CONTROL
+    if(!crc_ok&&Port==UART_PORT_VCP&&L4S_Active())L4S_RecordLinkError(true);
+#endif
+    return crc_ok;
 }
 
 void UART_HandleCommand(uint32_t Port)

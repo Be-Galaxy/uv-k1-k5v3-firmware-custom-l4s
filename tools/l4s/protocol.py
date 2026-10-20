@@ -5,6 +5,7 @@ from dataclasses import dataclass
 MASK = bytes.fromhex("166c14e62e910d402135d5401303e980")
 HELLO, OPEN, KEEPALIVE, CLOSE, STATUS, PAIR, MODE, TONE, PTT, CW, STOP, CONTEXT, SETTINGS, PROFILE, PROFILE_STORE = range(0x700, 0x70F)
 MAX_BODY = 120
+CW_OPTIONS, MACROS, DIAGNOSTICS, PASS_INFO = range(0x70F, 0x713)
 
 def crc(data: bytes) -> int:
     result = 0

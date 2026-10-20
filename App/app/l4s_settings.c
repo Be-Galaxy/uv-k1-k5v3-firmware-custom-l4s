@@ -25,7 +25,8 @@ bool L4S_ValidConfig(const L4S_UserConfig *c)
         (!c->rx_base_hz || (c->rx_base_hz>=18000000u && c->rx_base_hz<=1300000000u)) &&
         (!c->tx_base_hz || (c->tx_base_hz>=18000000u && c->tx_base_hz<=1300000000u)) &&
         c->rx_correction_hz>=-100000 && c->rx_correction_hz<=100000 &&
-        c->tx_correction_hz>=-100000 && c->tx_correction_hz<=100000;
+        c->tx_correction_hz>=-100000 && c->tx_correction_hz<=100000 &&
+        c->cw_hang<=200 && c->cw_keyer<=3 && (!c->cw_spacing || (c->cw_spacing>=5 && c->cw_spacing<=44));
 }
 void L4S_EncodeProfile(const L4S_UserConfig *c,uint8_t out[L4S_PROFILE_SIZE])
 {
@@ -35,7 +36,8 @@ void L4S_EncodeProfile(const L4S_UserConfig *c,uint8_t out[L4S_PROFILE_SIZE])
 }
 bool L4S_ConfigEqual(const L4S_UserConfig *a,const L4S_UserConfig *b) {
     return !memcmp(a,b,9) && a->rx_base_hz==b->rx_base_hz && a->tx_base_hz==b->tx_base_hz &&
-        a->rx_correction_hz==b->rx_correction_hz && a->tx_correction_hz==b->tx_correction_hz;
+        a->rx_correction_hz==b->rx_correction_hz && a->tx_correction_hz==b->tx_correction_hz &&
+        a->cw_hang==b->cw_hang && a->cw_keyer==b->cw_keyer && a->cw_spacing==b->cw_spacing;
 }
 bool L4S_DecodeProfile(const uint8_t data[L4S_PROFILE_SIZE],L4S_UserConfig *c)
 {
@@ -67,13 +69,21 @@ static bool blank_record(const uint8_t *data,unsigned size)
     for(unsigned i=0;i<size;i++) if(data[i]!=0xff) return false;
     return true;
 }
+static uint16_t satellite_crc(const uint8_t data[64])
+{
+    if(data[4]==1)return L4S_Crc(data,60);
+    uint8_t copy[64];memcpy(copy,data,64);copy[60]=copy[61]=0;
+    return L4S_Crc(copy,64);
+}
 bool L4S_DecodeSatelliteRecord(const uint8_t data[L4S_SAT_PROFILE_SIZE],L4S_UserConfig *config)
 {
-    if(memcmp(data,"L4SM",4) || data[4]!=1 || data[46] || data[47] || data[62] || data[63] ||
-        L4S_Read16(data+60)!=L4S_Crc(data,60)) return false;
+    if(memcmp(data,"L4SM",4) || (data[4]!=1 && data[4]!=2) || data[63] ||
+        (data[4]==1 && (data[46] || data[47] || data[62])) ||
+        L4S_Read16(data+60)!=satellite_crc(data)) return false;
     L4S_UserConfig c={0};memcpy(&c,data+5,9);
     c.rx_base_hz=L4S_Read32(data+30);c.tx_base_hz=L4S_Read32(data+34);
     c.rx_correction_hz=(int32_t)L4S_Read32(data+38);c.tx_correction_hz=(int32_t)L4S_Read32(data+42);
+    if(data[4]==2){c.cw_hang=data[46];c.cw_keyer=data[47];c.cw_spacing=data[62];if(!c.cw_hang)return false;}
     if(!L4S_ValidConfig(&c)) return false;
     *config=c;return true;
 }
@@ -96,7 +106,7 @@ uint8_t L4S_SaveSatelliteProfile(const uint8_t key[16],const char *name,const L4
         read(L4S_SAT_PROFILE_ADDR+i*sizeof(old),old,sizeof(old));
         if(blank_record(old,sizeof(old))) {if(available<0) available=i;}
         else if(!memcmp(old,"L4SM",4) && !memcmp(old+14,key,16)) {
-            if(old[4]!=1) return 12;
+            if(old[4]!=1 && old[4]!=2) return 12;
             target=i;break;
         }
     }
@@ -113,7 +123,9 @@ void L4S_EncodeSatelliteRecord(const uint8_t key[16],const char *name,const L4S_
     memset(record,0,64);memcpy(record,"L4SM",4);record[4]=1;memcpy(record+5,c,9);memcpy(record+14,key,16);
     L4S_Write32(record+30,c->rx_base_hz);L4S_Write32(record+34,c->tx_base_hz);
     L4S_Write32(record+38,(uint32_t)c->rx_correction_hz);L4S_Write32(record+42,(uint32_t)c->tx_correction_hz);
-    strncpy((char *)record+48,name,12);L4S_Write16(record+60,L4S_Crc(record,60));
+    strncpy((char *)record+48,name,12);
+    if(c->cw_hang){record[4]=2;record[46]=c->cw_hang;record[47]=c->cw_keyer;record[62]=c->cw_spacing;}
+    L4S_Write16(record+60,satellite_crc(record));
 }
 uint8_t L4S_CtcssChoice(uint16_t tenths)
 {
@@ -148,6 +160,7 @@ bool L4S_MenuKey(L4S_MenuState *m,KEY_Code_t key,bool busy)
     int direction=key==KEY_UP ? 1 : -1;
     if (!m->editing) {m->index=change(m->index,-direction,0,L4S_MENU_ITEMS-1,1);return false;}
     m->error=0;
+    if(m->index>=14&&m->index<=16&&!m->draft.cw_hang){m->draft.cw_hang=30;m->draft.cw_keyer=1;}
     switch(m->index) {
         case 0:m->draft.mode=change(m->draft.mode,direction,0,3,1);break;
         case 1:m->draft.power=change(m->draft.power,direction,0,7,1);break;
@@ -165,6 +178,15 @@ bool L4S_MenuKey(L4S_MenuState *m,KEY_Code_t key,bool busy)
             if(next>=18000000 && next<=1300000000) *base=(uint32_t)next;
             break;
         }
+        case 14:m->draft.cw_hang=change(m->draft.cw_hang ? m->draft.cw_hang : 30,direction,1,200,1);break;
+        case 15:
+            if(!m->draft.cw_hang){m->draft.cw_hang=30;m->draft.cw_keyer=1;}
+            m->draft.cw_keyer=change(m->draft.cw_keyer,direction,0,3,1);break;
+        case 16:
+            if(!m->draft.cw_hang){m->draft.cw_hang=30;m->draft.cw_keyer=1;}
+            m->draft.cw_spacing=change(m->draft.cw_spacing,direction,0,44,1);
+            if(m->draft.cw_spacing && m->draft.cw_spacing<5)m->draft.cw_spacing=direction>0 ? 5 : 0;
+            break;
         case 12:case 13: {
             int32_t *correction=m->index==12 ? &m->draft.rx_correction_hz : &m->draft.tx_correction_hz;
             const int32_t next=*correction+direction*(int32_t)(m->correction_step_hz ? m->correction_step_hz : 10);
@@ -196,6 +218,14 @@ void L4S_MenuValue(const L4S_MenuState *m,unsigned item,char *text,unsigned size
             snprintf_(text,size,"%s B %lu.%05lu",item==10 ? "RX" : "TX",(unsigned long)(hz/1000000u),(unsigned long)(hz%1000000u/10u));break;
         }
         case 12:case 13:snprintf_(text,size,"%s CORR %+ld",item==12 ? "RX" : "TX",(long)(item==12 ? m->draft.rx_correction_hz : m->draft.tx_correction_hz));break;
+        case 14:snprintf_(text,size,"CW HANG %u ms",(m->draft.cw_hang ? m->draft.cw_hang : 30)*10);break;
+        case 15:snprintf_(text,size,"CW KEYER %s",(const char *const[]){"A","B","ULT","BUG"}[m->draft.cw_hang ? m->draft.cw_keyer : 1]);break;
+        case 16:snprintf_(text,size,"CW SPACING %u",m->draft.cw_spacing);break;
         default:snprintf_(text,size,"APPLY + SAVE");break;
     }
+}
+uint8_t L4S_ShortcutMenuIndex(KEY_Code_t key)
+{
+    switch(key){case KEY_UP:return 10;case KEY_DOWN:return 11;case KEY_STAR:return 12;case KEY_F:return 13;
+        case KEY_9:return 1;case KEY_0:return 9;default:return 255;}
 }

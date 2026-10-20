@@ -8,7 +8,8 @@ from simulator import Firmware, ROOT
 
 class Config(ctypes.Structure):
     _fields_=[(name,ctypes.c_uint8) for name in ('mode','power','wpm','pitch','volume','tx_tone','rx_tone','arm_tone','squelch')]+[
-        ('rx_base_hz',ctypes.c_uint32),('tx_base_hz',ctypes.c_uint32),('rx_correction_hz',ctypes.c_int32),('tx_correction_hz',ctypes.c_int32)]
+        ('rx_base_hz',ctypes.c_uint32),('tx_base_hz',ctypes.c_uint32),('rx_correction_hz',ctypes.c_int32),('tx_correction_hz',ctypes.c_int32)]+[
+        ('cw_hang',ctypes.c_uint8),('cw_keyer',ctypes.c_uint8),('cw_spacing',ctypes.c_uint8)]
 
 class IoTest(unittest.TestCase):
     def setUp(self):
@@ -106,7 +107,7 @@ class IoTest(unittest.TestCase):
             self.lib.Host_MenuDraft(ctypes.byref(config))
             self.assertEqual(expected,config.squelch)
         self.lib.Host_MenuKey(10)
-        for _ in range(5):self.lib.Host_MenuKey(12)
+        for _ in range(8):self.lib.Host_MenuKey(12)
         self.assertTrue(self.lib.Host_MenuKey(10))  # Save remains reachable.
 
     def test_v1_profile_migrates_to_open_squelch_and_v2_keeps_level(self):

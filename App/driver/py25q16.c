@@ -471,12 +471,12 @@ static void PageProgram(uint32_t Addr, const uint8_t *Buf, uint32_t Size)
 /* Restricted to the reserved profile banks. No WIP waits in the control main loop. */
 bool PY25Q16_ProfileBusy(void) {return (ReadStatusReg(0)&1)!=0;}
 bool PY25Q16_ProfileEraseStart(uint32_t address) {
-    if((address!=0x012000u && address!=0x013000u) || PY25Q16_ProfileBusy())return false;
+    if((address<0x012000u || address>0x015000u || address%4096) || PY25Q16_ProfileBusy())return false;
     if(SectorCacheAddr==address)SectorCacheAddr=0x1000000u;
     WriteEnable();CS_Assert();SPI_WriteByte(0x20);WriteAddr(address);CS_Release();return true;
 }
 bool PY25Q16_ProfileProgramStart(uint32_t address,const void *data,unsigned size) {
-    if(address<0x012000u || address+size>0x014000u || !size || size>256 ||
+    if(address<0x012000u || address+size>0x016000u || !size || size>256 ||
         address%256+size>256 || PY25Q16_ProfileBusy())return false;
     if(SectorCacheAddr==address/4096*4096)SectorCacheAddr=0x1000000u;
     WriteEnable();CS_Assert();SPI_WriteByte(2);WriteAddr(address);
