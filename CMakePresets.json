@@ -230,6 +230,8 @@
             "inherits": "CW",
             "cacheVariables": {
                 "ENABLE_L4S_CONTROL": true,
+                "ENABLE_LTO": true,
+                "ENABLE_FMRADIO": false,
                 "EDITION_STRING": "L4S Control",
                 "VERSION_STRING_2": "L4S-v1-alpha7.1",
                 "TARGET": "l4s.control"
@@ -243,7 +245,7 @@
                 "TARGET": "nr7y.cw",
                 "VERSION_STRING_1": "v5.9.0",
                 "VERSION_STRING_2": "",
-                "ENABLE_FMRADIO": false,
+                "ENABLE_FMRADIO": true,
                 "ENABLE_FEAT_F4HWN_GMRS_FRS_MURS": false,
                 "ENABLE_FEAT_NR7Y_CW": true,
                 "ENABLE_FEAT_NR7Y_CPO": true,
@@ -254,7 +256,9 @@
                 "ENABLE_FEAT_F4HWN_AUDIO": true,
                 "ENABLE_FEAT_F4HWN_MENU_CAT": true,
                 "ENABLE_FEAT_F4HWN_ACTION_PICKER": true,
-                "ENABLE_FEAT_F4HWN_FOXHUNT": true,
+                "ENABLE_FEAT_F4HWN_FOXHUNT": false,
+                "ENABLE_FEAT_F4HWN_LOGO": true,
+                "ENABLE_FEAT_F4HWN_K5VIEWER": true,
                 "ENABLE_SWD": false,
                 "ENABLE_TX_WHEN_AM": true,
                 "ENABLE_F_CAL_MENU": true,

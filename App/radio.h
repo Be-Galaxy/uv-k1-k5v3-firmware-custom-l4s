@@ -174,6 +174,11 @@ void     RADIO_SetupRegisters(bool switchToForeground);
     void RADIO_ConfigureNOAA(void);
 #endif
 BK4819_FilterBandwidth_t RADIO_ResolveFilter(const VFO_Info_t *pVfo);
+#ifdef ENABLE_EXTRA_FILTER
+bool     RADIO_HasFilterChoice(const VFO_Info_t *pVfo);  // false for CW and USB, which have one filter
+#else
+static inline bool RADIO_HasFilterChoice(const VFO_Info_t *pVfo) { (void)pVfo; return true; }
+#endif
 void     RADIO_SetTxParameters(void);
 void     RADIO_SetupAGC(bool listeningAM, bool disable);
 void     RADIO_SetModulation(ModulationMode_t modulation);

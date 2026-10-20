@@ -287,11 +287,12 @@ static void SendReply(uint32_t Port, void *pReply, uint16_t Size)
 
 static void SendVersion(uint32_t Port)
 {
-    REPLY_0514_t Reply;
+    REPLY_0514_t Reply = {0};
 
     Reply.Header.ID = 0x0515;
     Reply.Header.Size = sizeof(Reply.Data);
-    strcpy(Reply.Data.Version, Version);
+    for (unsigned i=0;i+1<sizeof(Reply.Data.Version) && Version[i];i++)
+        Reply.Data.Version[i]=Version[i];
     Reply.Data.bHasCustomAesKey = bHasCustomAesKey;
     Reply.Data.bIsInLockScreen = bIsInLockScreen;
     Reply.Data.Challenge[0] = gChallenge[0];

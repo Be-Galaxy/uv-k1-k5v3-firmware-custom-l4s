@@ -190,7 +190,9 @@ const t_menu_item MenuList[] =
 	{"CWmsg3",      MENU_CW_MSG3       },
 	{"CWmsg4",      MENU_CW_MSG4       },
 	{"CWmrpt",      MENU_CW_MSG_REPEAT },
+	{"CWrgr",       MENU_CW_ROGER_DITS },
 	{"CWbkin",      MENU_CW_BKIN       },
+	{"CWhang",      MENU_CW_HANG       },
 #endif
 
     // hidden menu items from here on
@@ -237,10 +239,9 @@ const char* const gSubMenu_SFT_D[] =
     "-"
 };
 
-// Two entries, always. Which pair applies depends on the modulation of the VFO
-// being edited - CW and SSB never use the 12.5k filter, so they get their own
-// labels. UI_MENU_FilterLabels() picks the pair; the stored value is the same
-// wide/narrow bit either way.
+// Which labels apply depends on the modulation of the VFO being edited. FM and AM
+// pick wide or narrow; CW and SSB have the one 6.25k filter, shown as the only
+// choice. UI_MENU_FilterLabels() picks the list.
 const char* const gSubMenu_W_N[] =
 {
 	"25k FM",
@@ -251,7 +252,6 @@ const char* const gSubMenu_W_N[] =
 const char* const gSubMenu_W_N_SSB[] =
 {
 	"6.25k",
-	"2.0k",
 };
 #endif
 
@@ -260,14 +260,8 @@ const char* const gSubMenu_W_N_SSB[] =
 const char* const *UI_MENU_FilterLabels(void)
 {
 #ifdef ENABLE_EXTRA_FILTER
-	if (
-	#ifdef ENABLE_CW_MODULATOR
-		gTxVfo->Modulation == MODULATION_CW ||
-	#endif
-		gTxVfo->Modulation == MODULATION_USB)
-	{
+	if (!RADIO_HasFilterChoice(gTxVfo))
 		return gSubMenu_W_N_SSB;
-	}
 #endif
 	return gSubMenu_W_N;
 }
@@ -554,6 +548,10 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
     {"BLMIN\nTMP OFF",  ACTION_OPT_BLMIN_TMP_OFF},      //BackLight Minimum Temporary OFF
 #endif
 #ifdef ENABLE_CW_MODULATOR
+	{"CW KEY\nINPUT", ACTION_OPT_CW_KEY_INPUT},
+	{"CW KEYER\nMODE", ACTION_OPT_CW_KEYER_MODE},
+	{"CW SPEED", ACTION_OPT_CW_SPEED},
+	{"CW\nBREAK-IN", ACTION_OPT_CW_BREAK_IN},
     #ifdef ENABLE_CODE_PRACTICE
         {"CODE\nPRACTICE", ACTION_OPT_CPO},
     #endif
@@ -565,12 +563,13 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
 	{"REPEAT\nCW MSG2", ACTION_OPT_REPEAT_CWMSG2},
 	{"REPEAT\nCW MSG3", ACTION_OPT_REPEAT_CWMSG3},
 	{"REPEAT\nCW MSG4", ACTION_OPT_REPEAT_CWMSG4},
+	{"PROPER\nROGER", ACTION_OPT_CW_PROPER_ROGER},
 #endif
 #ifdef ENABLE_FEAT_F4HWN
     {"RX MODE",         ACTION_OPT_RXMODE},
     {"MAIN ONLY",       ACTION_OPT_MAINONLY},
     {"PTT",             ACTION_OPT_PTT},
-    {"WIDE\nNARROW",    ACTION_OPT_WN},
+    {"FILTER\nWIDTH",   ACTION_OPT_WN},
     {"MUTE",            ACTION_OPT_MUTE},
     #ifdef ENABLE_FEAT_F4HWN_AUDIO
         {"RxA",            ACTION_OPT_RXA},
@@ -689,8 +688,8 @@ const char *const CategoryNames[CAT_COUNT] = {
 #ifdef ENABLE_CW_MODULATOR
 static const uint8_t CatCw[] = {
     MENU_CW_FREQ, MENU_CW_SIDETONE_LEVEL, MENU_CW_KEYER_MODE, MENU_CW_KEY_WPM,
-    MENU_CW_KEY_INPUT, MENU_CW_BKIN, MENU_CW_MSG1, MENU_CW_MSG2, MENU_CW_MSG3,
-    MENU_CW_MSG4, MENU_CW_MSG_REPEAT,
+    MENU_CW_KEY_INPUT, MENU_CW_BKIN, MENU_CW_HANG, MENU_CW_MSG1, MENU_CW_MSG2,
+    MENU_CW_MSG3, MENU_CW_MSG4, MENU_CW_MSG_REPEAT, MENU_CW_ROGER_DITS,
 };
 #endif
 static const uint8_t CatChannels[] = {
@@ -1065,6 +1064,7 @@ void UI_DisplayMenu(void)
     top_right_badge[0] = '\0';
 
     bool already_printed = false;
+    bool cw_text_first_line = false;  // first line of String is CW text: print zeros dotted
 
     /* Brightness is set to max in some entries of this menu. Return it to the configured brightness
        level the "next" time we enter here.I.e., when we move from one menu to another.
@@ -1690,8 +1690,16 @@ void UI_DisplayMenu(void)
 			sprintf(String, "Break-In\n%s", gSubMenu_OFF_ON[gSubMenuSelection]);
 			break;
 
+		case MENU_CW_HANG:
+			sprintf(String, "Hang\n%d ms", gSubMenuSelection * 10);
+			break;
+
 		case MENU_CW_MSG_REPEAT:
 			sprintf(String, "%d s", gSubMenuSelection);
+			break;
+
+		case MENU_CW_ROGER_DITS:
+			sprintf(String, "Dah\n%d dits", gSubMenuSelection);
 			break;
 
 		case MENU_CW_MSG1:
@@ -1707,7 +1715,7 @@ void UI_DisplayMenu(void)
 					const uint8_t display_len = CW_GetTxDisplayTail(display, sizeof(display));
 					
 					// Display the recording text on line 2
-					UI_PrintString(display, menu_item_x1, 0, 2, 8);
+					UI_PrintStringCW(display, menu_item_x1, 0, 2);
 					
 					// Show cursor under next position
 					char cursor[2] = "^";
@@ -1728,7 +1736,9 @@ void UI_DisplayMenu(void)
 					if (len == 0) {
 						strcpy(String, "empty");
 					} else {
+						// "<first 9 chars>\n<n> chars", laid out by the shared value printer below
 						CW_FormatMacroDisplay(macroIdx, String, 9);
+						cw_text_first_line = true;
 					}
 				} else {
 					// record/play/repeat
@@ -1918,6 +1928,8 @@ void UI_DisplayMenu(void)
             {
                 if (small)
                     UI_PrintStringSmallNormal(String + i, menu_item_x1, menu_item_x2, y);
+                else if (cw_text_first_line && i == 0)
+                    UI_PrintStringCW(String + i, menu_item_x1, menu_item_x2, y);
                 else
                     UI_PrintString(String + i, menu_item_x1, menu_item_x2, y, 8);
 

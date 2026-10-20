@@ -41,6 +41,7 @@ EXPORT void Host_ReplyDone(void) {L4S_ReplyComplete(&writer);}
 EXPORT bool Host_ReplyBusy(void) {return writer.busy;}
 EXPORT const uint8_t *Host_ReplyData(void) {return writer.data;}
 EXPORT unsigned Host_Submits(void) {return submits;}
+EXPORT uint8_t Host_NativeSidetoneLevel(uint8_t volume) {return L4S_NativeSidetoneLevel(volume);}
 EXPORT bool Host_SaveConfig(const L4S_UserConfig *c) {return L4S_SaveProfile(c,Host_StorageRead,Host_StorageWrite);}
 EXPORT bool Host_ReadConfig(L4S_UserConfig *c) {return L4S_DecodeProfile(record,c);}
 EXPORT void Host_UnknownProfile(void) {memset(record,0x55,sizeof(record));}

@@ -11,6 +11,12 @@ const uint8_t *L4S_GetProfileKey(void) {return profile_key;}
 _Static_assert(L4S_PROFILE_ADDR>=0x00A171u && L4S_PROFILE_ADDR+L4S_PROFILE_SIZE<=0x00B000u,"Profile overlaps legacy settings/calibration");
 _Static_assert(L4S_SAT_PROFILE_ADDR>=L4S_PROFILE_ADDR+L4S_PROFILE_SIZE &&
     L4S_SAT_PROFILE_ADDR+L4S_SAT_PROFILE_SIZE*L4S_SAT_PROFILE_COUNT==0x00B000u,"Satellite profiles overlap allocated storage");
+uint8_t L4S_NativeSidetoneLevel(uint8_t volume)
+{
+    static const uint8_t levels[]={0,6,11,12,13,14,15};
+    return volume<sizeof(levels) ? levels[volume] : 0;
+}
+
 void L4S_DefaultConfig(L4S_UserConfig *c) { *c=(L4S_UserConfig){.power=7,.wpm=20,.pitch=60,.volume=4}; }
 bool L4S_ValidConfig(const L4S_UserConfig *c)
 {

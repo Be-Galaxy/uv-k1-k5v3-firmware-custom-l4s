@@ -462,3 +462,14 @@ const uint8_t BITMAP_Play[8] = {
 	0b00111100,
 	0b00011000,
 };
+
+/* CW popup confirm (MENU) mark, 7x7: a small-font capital's height */
+const uint8_t BITMAP_Confirm[7] = {
+	0b00011000,
+	0b00110000,
+	0b01100000,
+	0b00111000,
+	0b00001100,
+	0b00000110,
+	0b00000011,
+};

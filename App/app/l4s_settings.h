@@ -24,6 +24,8 @@ typedef struct {
     uint16_t correction_step_hz;
 } L4S_MenuState;
 void L4S_DefaultConfig(L4S_UserConfig *config);
+/* Preserve the protocol/profile 0-6 loudness curve with the native 0-15 gain scale. */
+uint8_t L4S_NativeSidetoneLevel(uint8_t volume);
 bool L4S_ValidConfig(const L4S_UserConfig *config);
 bool L4S_ConfigEqual(const L4S_UserConfig *,const L4S_UserConfig *);
 void L4S_EncodeProfile(const L4S_UserConfig *config, uint8_t out[L4S_PROFILE_SIZE]);

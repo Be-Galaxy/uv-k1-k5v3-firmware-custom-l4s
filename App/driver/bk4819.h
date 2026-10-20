@@ -50,9 +50,6 @@ enum BK4819_FilterBandwidth_t
 	BK4819_FILTER_BW_NARROW,
     BK4819_FILTER_BW_NARROWER,
     BK4819_FILTER_BW_AM,
-#ifdef ENABLE_EXTRA_FILTER
-	BK4819_FILTER_BW_NARROWEST, // 2.0 kHz RF filter (BK4829 minimum)
-#endif
     BK4819_FILTER_BW_UNKNOWN
 };
 
@@ -156,6 +153,7 @@ uint8_t  BK4819_GetExNoiceIndicator(void);
 uint16_t BK4819_GetVoiceAmplitudeOut(void);
 uint8_t  BK4819_GetAfTxRx(void);
 void     BK4819_SetRxAudioGain(void);
+void     BK4819_SetAfDacGain(uint8_t dacGain);
 
 bool     BK4819_GetFrequencyScanResult(uint32_t *pFrequency);
 BK4819_CssScanResult_t BK4819_GetCxCSSScanResult(uint32_t *pCdcssFreq, uint16_t *pCtcssFreq);

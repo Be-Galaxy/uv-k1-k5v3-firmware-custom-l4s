@@ -3,7 +3,7 @@
 ## 📦 [**Download prebuilt firmware to flash → Releases**](https://github.com/briand/uv-k1-k5v3-firmware-custom/releases)
 Pre-built `.uf2`/`.bin` files ready to flash are published every release, you don't need to compile them.
 
-## 📖 [**Documentation site →**](https://github.com/briand/cw-firmware-docs)
+## 📖 [**Documentation site →**](https://briand.github.io/cw-firmware-docs/)
 Full menu reference, rework guides now live here.
 
 This repository builds on the F4HWN codebase by adding a set of features specifically for CW operators.

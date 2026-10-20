@@ -6,6 +6,7 @@
 #include "app/chFrScanner.h"
 #include "app/cwapp.h"
 #include "app/cwkeyer.h"
+#include "app/cwguard.h"
 #include "app/cwmacro.h"
 #include "app/scanner.h"
 #include "app/uart.h"
@@ -218,7 +219,7 @@ static bool apply_user_config(const L4S_UserConfig *c)
     gTxVfo->Modulation=fm ? MODULATION_FM : MODULATION_CW;
     if(fm) gRxVfo->CHANNEL_BANDWIDTH=gTxVfo->CHANNEL_BANDWIDTH=c->mode==3 ? BANDWIDTH_NARROW : BANDWIDTH_WIDE;
     gTxVfo->OUTPUT_POWER=c->power;
-    gEeprom.CW_KEY_WPM=c->wpm;gEeprom.CW_TONE_FREQUENCY=c->pitch;gEeprom.CW_SIDETONE_LEVEL=c->volume;
+    gEeprom.CW_KEY_WPM=c->wpm;gEeprom.CW_TONE_FREQUENCY=c->pitch;gEeprom.CW_SIDETONE_LEVEL=L4S_NativeSidetoneLevel(c->volume);
     gEeprom.SQUELCH_LEVEL=c->squelch;
     apply_tone(&gTxVfo->freq_config_TX,fm ? c->tx_tone : 0);
     apply_tone(&gRxVfo->freq_config_RX,fm ? c->rx_tone : 0);
@@ -276,16 +277,16 @@ static bool ptt_on(void)
 
 static bool cw_start(const uint8_t *text, uint8_t length, uint8_t wpm)
 {
-    if (!can_retune() || state.menu_open || release_latch || GPIO_IsPttPressed() || gEeprom.KEY_LOCK || gBatteryDisplayLevel==0 ||
+    if (!can_retune() || state.menu_open || release_latch || GPIO_IsPttPressed() || gEeprom.KEY_LOCK || CW_GuardIsLocked() || gBatteryDisplayLevel==0 ||
         gBatteryDisplayLevel>6 || !validate_pair(&state.applied) ||
         (gTxVfo->BUSY_CHANNEL_LOCK && (g_SquelchLost || gCurrentFunction==FUNCTION_RECEIVE))) return false;
     gEeprom.CW_KEY_WPM=wpm;
-    if (!CW_StartTextPlayback(text,length)) return false;
+    if (!CW_StartRemoteTextPlayback(text,length)) return false;
     return true;
 }
 
 static bool cw_active(void) { return gCW_PlaybackActive; }
-static bool cw_failed(void) { return gTxTimeoutReached || VfoState[1]!=VFO_STATE_NORMAL; }
+static bool cw_failed(void) { return gTxTimeoutReached || CW_GuardIsLocked() || VfoState[1]!=VFO_STATE_NORMAL; }
 static uint8_t cw_progress(void) { return CW_TextPlaybackPosition(); }
 static uint8_t select_profile(uint8_t operation,const uint8_t *p)
 {
