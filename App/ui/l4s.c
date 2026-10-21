@@ -53,9 +53,12 @@ void UI_DisplayL4s(void)
     if(suffix) {while(suffix>text && suffix[-1]==' ')suffix--;*suffix=0;}
     UI_PrintStringSmallNormal(text,0,0,0);
     UI_PrintStringSmallNormal(mode,112,0,0);
+    char signal[12];
+    if(s->rssi_dbm==L4S_RSSI_UNKNOWN)snprintf_(signal,sizeof(signal),"---dBm");
+    else snprintf_(signal,sizeof(signal),"%ddBm",s->rssi_dbm);
     if (s->context_valid)
-        snprintf_(text,sizeof(text),"Az:%03u El:%+03d R%u",s->azimuth_tenths/10,s->elevation_tenths/10,s->rssi);
-    else snprintf_(text,sizeof(text),"Az:--- El:--- R%u",s->rssi);
+        snprintf_(text,sizeof(text),"A%03u E%+03d %s",s->azimuth_tenths/10,s->elevation_tenths/10,signal);
+    else snprintf_(text,sizeof(text),"A--- E--- %s",signal);
     UI_PrintStringSmallNormal(text,0,127,1);
     snprintf_(text,sizeof(text),"RX %lu.%05lu",(unsigned long)(s->applied.rx_hz/1000000u),
               (unsigned long)(s->applied.rx_hz%1000000u/10u));

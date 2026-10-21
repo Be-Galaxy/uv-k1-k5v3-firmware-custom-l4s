@@ -13,6 +13,7 @@
 #define L4S_META_SIZE 8u
 #define L4S_SNAPSHOT_SIZE 24u
 #define L4S_MAX_BODY 120u
+#define L4S_RSSI_UNKNOWN INT16_MIN
 
 enum {
     L4S_HELLO = 0x0700, L4S_OPEN, L4S_KEEPALIVE, L4S_CLOSE,
@@ -83,6 +84,8 @@ typedef struct {
     uint32_t requests,rejected,aborts,usb_losses,reply_drops,crc_errors,length_errors,max_gap;
     uint32_t pass_updated,pass_seconds;
     uint8_t stop_reason,pass_phase,rssi,last_rejection;
+    int16_t rssi_dbm;
+    uint32_t rssi_sampled_at;
     bool local_macro;
 } L4S_State;
 

@@ -35,6 +35,7 @@ size_t L4S_EncodeFrame(const uint8_t *body, size_t n, uint8_t *frame)
 void L4S_Init(L4S_State *s, const L4S_Ops *ops)
 {
     memset(s, 0, sizeof(*s)); s->ops = ops;
+    s->rssi_dbm = L4S_RSSI_UNKNOWN;
     L4S_DefaultConfig(&s->settings);
     s->step_hz=250;
     s->correction_step_hz=10;
@@ -127,7 +128,8 @@ static size_t snapshot(L4S_State *s, uint8_t *p)
 static uint8_t execute(L4S_State *s, uint16_t cmd, const uint8_t *p, size_t n)
 {
     switch (cmd) {
-    case L4S_DIAGNOSTICS:return n==0?L4S_APPLIED:L4S_BAD_LENGTH;
+    /* Empty requests retain legacy levels; {2} requests signed 16-bit dBm. */
+    case L4S_DIAGNOSTICS:return n==0 || (n==1 && p[0]==2) ? L4S_APPLIED : L4S_BAD_LENGTH;
     case L4S_PASS_INFO:
         if(n!=5)return L4S_BAD_LENGTH;
         if(p[0]>3||L4S_Read32(p+1)>604800u)return L4S_RANGE;
@@ -277,6 +279,7 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
             s->pair_ready=s->mode_ready=false; s->cw_state=L4S_CW_IDLE;
             s->error=0; s->last_alive=now;
             s->context_valid=false;s->pass_phase=0;
+            s->rssi_dbm=L4S_RSSI_UNKNOWN;s->rssi=0;
         }
     } else if (!s->session || session != s->session) result=L4S_BAD_SESSION;
     else {
@@ -323,10 +326,13 @@ size_t L4S_Handle(L4S_State *s, const uint8_t *body, size_t length, uint32_t now
         p[40]=0x0f; p[41]=0x09; /* RX FM/AM/USB/CW; TX FM/CW only. */
         data_size=42;
     } else if(cmd==L4S_DIAGNOSTICS && result==L4S_APPLIED) {
-        uint8_t *p=out+12;p[0]=1;p[1]=s->stop_reason;p[2]=s->last_rejection;p[3]=s->rssi;
+        const bool dbm=length==13 && body[12]==2;
+        uint8_t *p=out+12;p[0]=dbm?2:1;p[1]=s->stop_reason;p[2]=s->last_rejection;
+        if(dbm)L4S_Write16(p+3,(uint16_t)s->rssi_dbm);else p[3]=s->rssi;
+        const unsigned offset=dbm?5:4;
         uint32_t counters[]={s->requests,s->rejected,s->aborts,s->usb_losses,s->reply_drops,s->max_gap,s->crc_errors,s->length_errors};
-        for(unsigned i=0;i<8;i++)L4S_Write32(p+4+i*4,counters[i]);
-        data_size=36;
+        for(unsigned i=0;i<8;i++)L4S_Write32(p+offset+i*4,counters[i]);
+        data_size=offset+32;
     } else if(cmd==L4S_CW_OPTIONS && result==L4S_APPLIED) {
         uint8_t *p=out+12;p[0]=1;p[1]=s->settings.wpm;p[2]=s->settings.pitch;p[3]=s->settings.volume;
         p[4]=s->settings.cw_hang?s->settings.cw_hang:30;p[5]=s->settings.cw_hang?s->settings.cw_keyer:1;

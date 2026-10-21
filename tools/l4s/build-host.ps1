@@ -8,6 +8,7 @@ New-Item -ItemType Directory -Path $hostOutput -Force | Out-Null
     -I (Join-Path $repoRoot 'App/app') `
     -I (Join-Path $repoRoot 'App') `
     (Join-Path $repoRoot 'App/app/l4s_protocol.c') `
+    (Join-Path $repoRoot 'App/app/l4s_rssi.c') `
     (Join-Path $repoRoot 'App/app/l4s_io.c') `
     (Join-Path $repoRoot 'App/app/l4s_settings.c') `
     (Join-Path $repoRoot 'App/app/l4s_store.c') `

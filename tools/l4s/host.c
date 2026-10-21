@@ -1,5 +1,6 @@
 /* Host-only, no hardware access. Copyright 2026 Iu_yang1. SPDX-License-Identifier: Apache-2.0 */
 #include "l4s_protocol.h"
+#include "l4s_rssi.h"
 #include "l4s_io.h"
 #include "app/l4s_control.h"
 #include <string.h>
@@ -112,6 +113,11 @@ EXPORT size_t Host_Handle(const uint8_t *body,size_t n,uint32_t now,uint8_t *out
     Host_Tick(now); return L4S_Handle(&state,body,n,now,out);
 }
 EXPORT void Host_Deny(uint8_t value) { denied=value!=0; }
+EXPORT bool Host_SampleRssi(uint32_t now,uint16_t raw,int16_t correction) {
+    static const uint16_t calibration[4]={100,150,200,250};
+    if(!L4S_RssiDue(&state,now,state.tx_window_open || tx_state()!=L4S_TX_OFF))return false;
+    L4S_UpdateRssi(&state,now,raw,correction,calibration);return true;
+}
 EXPORT uint8_t Host_LocalCw(const uint8_t *text,uint8_t n,uint32_t now){return L4S_LocalCw(&state,text,n,now);}
 EXPORT void Host_LocalStop(void) { L4S_Abort(&state,L4S_CANCELLED); }
 EXPORT unsigned Host_Starts(void) { return starts; }

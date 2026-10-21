@@ -68,7 +68,7 @@ class DisplayTest(unittest.TestCase):
         self.send(CONTEXT,struct.pack('<Hh16s',1370,-340,b'DOSAAF-85'))
         lines=self.render()
         self.assertEqual('DOSAAF-85 FM',lines[0])
-        self.assertEqual('Az:137 El:-34 R0',lines[1])
+        self.assertEqual('A137 E-34 ---dBm',lines[1])
         self.send(CONTEXT,struct.pack('<Hh16s',3599,900,b'ABCDEFGHIJKLMNOP'))
         self.render()  # Longest name / angular extrema remain inside the LCD.
 
