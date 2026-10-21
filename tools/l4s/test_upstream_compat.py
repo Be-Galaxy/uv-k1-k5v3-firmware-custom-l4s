@@ -6,6 +6,26 @@ from simulator import Firmware
 
 
 class UpstreamCompatibilityTest(unittest.TestCase):
+    def test_l4s_and_native_meter_share_conversion_corrections_and_display_ceiling(self):
+        root = Path(__file__).resolve().parents[2]
+        native = (root / 'App/ui/main.c').read_text(encoding='utf-8')
+        control = (root / 'App/app/l4s_control.c').read_text(encoding='utf-8')
+        radio = (root / 'App/radio.c').read_text(encoding='utf-8')
+        self.assertIn('BK4819_GetRSSI_dBm() + RADIO_GetRssiCorrection()', native)
+        self.assertIn('RADIO_GetRssiCorrection()', control)
+        self.assertNotIn('dBmCorrTable', control)
+        correction = radio.split('int16_t RADIO_GetRssiCorrection(void)', 1)[1].split('return correction;', 1)[0]
+        self.assertIn('dBmCorrTable[gRxVfo->Band]', correction)
+        self.assertIn('gSetting_AM_fix && gRxVfo->Modulation == MODULATION_AM', correction)
+        self.assertIn('AM_fix_get_gain_diff()', correction)
+        for driver in ('bk4819.c', 'bk4829.c'):
+            source = (root / 'App/driver' / driver).read_text(encoding='utf-8')
+            self.assertIn('return RSSI_RawToDbm(rssi);', source)
+        l4s = (root / 'App/app/l4s_rssi.c').read_text(encoding='utf-8')
+        self.assertIn('RSSI_RawToDbm(raw) + correction_db', l4s)
+        self.assertIn('RSSI_DisplayDbm(rssi_dBm)', native)
+        self.assertIn('RSSI_DisplayDbm(s->rssi_dbm)', (root / 'App/ui/l4s.c').read_text(encoding='utf-8'))
+
     def test_saved_volume_levels_keep_the_original_loudness_curve(self):
         lib = Firmware().lib
         lib.Host_NativeSidetoneLevel.argtypes = [ctypes.c_uint8]

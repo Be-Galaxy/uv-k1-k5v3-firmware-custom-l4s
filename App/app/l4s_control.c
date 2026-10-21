@@ -18,7 +18,6 @@
 #include "driver/vcp.h"
 #include "driver/py25q16.h"
 #include "driver/bk4819.h"
-#include "am_fix.h"
 #include "dcs.h"
 #include "frequencies.h"
 #include "misc.h"
@@ -352,14 +351,7 @@ void L4S_ControlTick(void)
     L4S_MacrosTick(&macros,millis(),state.session);
     const uint32_t sample_time=millis();
     if (L4S_RssiDue(&state,sample_time,state.tx_window_open || tx_state()!=L4S_TX_OFF)) {
-        int16_t correction=0;
-#ifdef ENABLE_FEAT_F4HWN
-        correction=dBmCorrTable[gRxVfo->Band];
-#endif
-#ifdef ENABLE_AM_FIX
-        if(gSetting_AM_fix && gRxVfo->Modulation==MODULATION_AM)correction+=AM_fix_get_gain_diff();
-#endif
-        L4S_UpdateRssi(&state,sample_time,BK4819_GetRSSI(),correction,gEEPROM_RSSI_CALIB[gRxVfo->Band]);
+        L4S_UpdateRssi(&state,sample_time,BK4819_GetRSSI(),RADIO_GetRssiCorrection(),gEEPROM_RSSI_CALIB[gRxVfo->Band]);
     }
     if(store.phase==L4S_STORE_DONE && !completion_handled && !GPIO_IsPttPressed() && can_retune()) {
         if(state.session) {

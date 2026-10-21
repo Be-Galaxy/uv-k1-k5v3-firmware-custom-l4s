@@ -52,6 +52,19 @@ VFO_Info_t    *gCurrentVfo;
 DCS_CodeType_t gCurrentCodeType;
 VfoState_t     VfoState[2];
 
+int16_t RADIO_GetRssiCorrection(void)
+{
+    int16_t correction = 0;
+#ifdef ENABLE_FEAT_F4HWN
+    correction = dBmCorrTable[gRxVfo->Band];
+#endif
+#ifdef ENABLE_AM_FIX
+    if (gSetting_AM_fix && gRxVfo->Modulation == MODULATION_AM)
+        correction += AM_fix_get_gain_diff();
+#endif
+    return correction;
+}
+
 const char gModulationStr[MODULATION_UKNOWN][4] = {
     [MODULATION_FM]="FM",
     [MODULATION_AM]="AM",

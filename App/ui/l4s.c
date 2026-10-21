@@ -4,6 +4,7 @@
 #include "driver/st7565.h"
 #include "external/printf/printf.h"
 #include "ui/helper.h"
+#include "helper/rssi.h"
 #include <string.h>
 
 static void display_menu(const L4S_State *s,const L4S_MenuState *menu)
@@ -55,7 +56,7 @@ void UI_DisplayL4s(void)
     UI_PrintStringSmallNormal(mode,112,0,0);
     char signal[12];
     if(s->rssi_dbm==L4S_RSSI_UNKNOWN)snprintf_(signal,sizeof(signal),"---dBm");
-    else snprintf_(signal,sizeof(signal),"%ddBm",s->rssi_dbm);
+    else snprintf_(signal,sizeof(signal),"%ddBm",RSSI_DisplayDbm(s->rssi_dbm));
     if (s->context_valid)
         snprintf_(text,sizeof(text),"A%03u E%+03d %s",s->azimuth_tenths/10,s->elevation_tenths/10,signal);
     else snprintf_(text,sizeof(text),"A--- E--- %s",signal);

@@ -24,6 +24,8 @@
 #include "driver/bk4819.h"
 #include "frequencies.h"
 
+int16_t RADIO_GetRssiCorrection(void);
+
 enum {
     RADIO_CHANNEL_UP   = 0x01u,
     RADIO_CHANNEL_DOWN = 0xFFu,

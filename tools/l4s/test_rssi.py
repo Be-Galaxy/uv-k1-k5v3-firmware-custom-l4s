@@ -43,6 +43,26 @@ class RssiTest(unittest.TestCase):
             self.assertGreater(struct.unpack_from('<I', reply, 4)[0], 0)
         self.assertEqual(2, self.send(DIAGNOSTICS, b'\3')[5])
 
+    def test_native_band_defaults_and_saved_corrections_use_the_same_conversion(self):
+        now = 10
+        for correction in (-15, -16, -10, -4, -7, -6, -1, -64, 0, 64):
+            for raw in (0, 1, 100, 101, 214, 321, 511):
+                self.assertTrue(self.fw.lib.Host_SampleRssi(now, raw, correction))
+                self.assertEqual(raw // 2 - 160 + correction, self.dbm())
+                now += 100
+
+    def test_strong_signal_display_matches_native_ceiling_without_changing_calibrated_data(self):
+        self.fw.lib.Host_Render.argtypes = [ctypes.c_void_p]
+        self.fw.lib.Host_DisplayText.argtypes = [ctypes.c_uint]
+        self.fw.lib.Host_DisplayText.restype = ctypes.c_char_p
+        for now, raw, displayed in ((10, 212, b'-54dBm'), (110, 214, b'-53dBm'),
+                                    (210, 220, b'-53dBm'), (310, 320, b'-53dBm')):
+            self.assertTrue(self.fw.lib.Host_SampleRssi(now, raw, 0))
+            self.assertEqual(raw // 2 - 160, self.dbm())
+            frame = ctypes.create_string_buffer(896)
+            self.assertEqual(0, self.fw.lib.Host_Render(frame))
+            self.assertIn(displayed, self.fw.lib.Host_DisplayText(1))
+
     def test_sampling_is_rate_limited_and_resumes_after_physical_ptt(self):
         self.assertTrue(self.fw.lib.Host_SampleRssi(10, 100, -6))
         self.assertFalse(self.fw.lib.Host_SampleRssi(109, 250, 0))

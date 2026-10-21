@@ -46,6 +46,7 @@
 #include "external/printf/printf.h"
 #include "functions.h"
 #include "helper/battery.h"
+#include "helper/rssi.h"
 #include "misc.h"
 #include "radio.h"
 #include "settings.h"
@@ -860,12 +861,7 @@ void UI_DisplayAudioBar(void)
 // Received signal as the S-meter reports it: dBm, plus the S-unit (0-9) and dB over S9
 static int16_t GetSignalLevel(uint8_t *s_level, uint8_t *overS9dBm)
 {
-    const int16_t rssi_dBm =
-        BK4819_GetRSSI_dBm()
-#ifdef ENABLE_AM_FIX
-        + ((gSetting_AM_fix && gRxVfo->Modulation == MODULATION_AM) ? AM_fix_get_gain_diff() : 0)
-#endif
-        + dBmCorrTable[gRxVfo->Band];
+    const int16_t rssi_dBm = BK4819_GetRSSI_dBm() + RADIO_GetRssiCorrection();
 
 #ifdef ENABLE_FEAT_F4HWN
     // IARU VHF/UHF S-meter: S9 = -93 dBm, 1 S-unit = 6 dB
@@ -1337,7 +1333,7 @@ void DisplayRSSIBar(const bool now)
     const int16_t rssi_dBm = GetSignalLevel(&s_level, &overS9dBm);
 #ifdef ENABLE_FEAT_F4HWN
     const uint8_t overS9Bars = overS9dBm / 10;
-    const int16_t display_rssi_dBm = (rssi_dBm > -53) ? -53 : rssi_dBm;
+    const int16_t display_rssi_dBm = RSSI_DisplayDbm(rssi_dBm);
 #else
     const uint8_t overS9Bars = MIN(overS9dBm/10, 4);
 #endif

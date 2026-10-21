@@ -24,6 +24,7 @@
 #include "audio.h"
 
 #include "driver/bk4819.h"
+#include "helper/rssi.h"
 #include "driver/gpio.h"
 #include "driver/system.h"
 #include "driver/systick.h"
@@ -398,7 +399,7 @@ int8_t BK4819_GetRxGain_dB(void)
 int16_t BK4819_GetRSSI_dBm(void)
 {
     uint16_t rssi = BK4819_GetRSSI();
-    return (rssi / 2) - 160;// - BK4819_GetRxGain_dB();
+    return RSSI_RawToDbm(rssi);
 }
 
 void BK4819_ToggleGpioOut(BK4819_GPIO_PIN_t Pin, bool bSet)
