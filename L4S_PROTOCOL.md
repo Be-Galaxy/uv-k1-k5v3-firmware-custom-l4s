@@ -1,6 +1,6 @@
 # L4S v1 USB control protocol
 
-Current delivery is alpha7. New profile management requires the matching APK and feature 512; historical alpha5/alpha6 layouts below are migration formats, not the current persistence/rounding algorithm. The wire version remains 1.
+Current delivery is L4S v1.0.0. Profile management requires the matching APK and feature 512; historical alpha5/alpha6 layouts below are migration formats, not the current persistence/rounding algorithm. The wire version remains 1.
 
 The `L4S` preset extends the NR7Y `CW` preset. The original Fusion/CW presets and legacy serial commands remain available. L4S controls one half-duplex UV-K1 / UV-K5 V3; USB carries commands, not audio. Microphone audio stays on the radio/accessory connector.
 
@@ -27,6 +27,12 @@ Body: `command:u16 | payload length:u16 | version:u8=1 | reserved:u8=0 | sequenc
 | 070C | SETTINGS | none; requires feature 128; read-only native settings and live CTCSS |
 | 070D | PROFILE | requires feature 256; SELECT: op=0, profile key:16, legacy transponder key:16, ASCII name:16; BASES: op=1, RX base Hz:u32, TX base Hz:u32 (0 receive-only), control step Hz:u16, expected profile generation:u32; READ: op=2 |
 | 070E | PROFILE_STORE | requires feature 512; short requests for snapshot status, slot reads, staged import, delete request, cancel and correction-edit step; no remote COMMIT |
+| 070F | CW_OPTIONS | op=0 reads; op=1 followed by WPM, pitch in 10 Hz, volume, hang in 10 ms, keyer, Farnsworth WPM sets RAM options |
+| 0710 | MACROS | eight independent L4S CW slots; staged batch sync, handset MENU confirmation, local cancel and transaction status |
+| 0711 | DIAGNOSTICS | none retains the 36-byte version-1 reply; byte `2` selects the 37-byte version-2 reply with signed dBm |
+| 0712 | PASS_INFO | phase:u8 (0 none, 1 AOS, 2 LOS, 3 ended), remaining seconds:u32; display only |
+
+Version-2 diagnostics contain version:u8=2, stop reason:u8, last rejection:u8, RSSI:i16 in dBm, then the same eight u32 counters as version 1. RSSI `-32768` means not yet sampled. The unchanged version-1 reply keeps its calibrated signal-level byte for older tools. The companion app no longer exposes or polls this diagnostics command. RSSI is sampled at most every 100 ms in receive, using the RF register's half-dB conversion and the native S-meter band/AM gain correction; the last receive value is retained throughout PTT/CW. The handset displays dBm, or `---dBm` until a sample is available. No RF-accuracy certification is implied.
 
 Modes: FM=0, AM=1, USB receive=2, CW=3. TX accepts FM/CW only. PTT-ON is for FM voice; CW uses its own firmware playback engine. Readiness requires PAIR and MODE to have been applied. After STOP/PTT-OFF, apply a newer PAIR revision before requesting another transmission.
 
