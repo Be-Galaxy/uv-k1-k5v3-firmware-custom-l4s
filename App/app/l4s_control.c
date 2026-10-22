@@ -290,6 +290,11 @@ static bool cw_start(const uint8_t *text, uint8_t length, uint8_t wpm)
         (gTxVfo->BUSY_CHANNEL_LOCK && (g_SquelchLost || gCurrentFunction==FUNCTION_RECEIVE))) return false;
     gEeprom.CW_KEY_WPM=wpm;
     if (!CW_StartRemoteTextPlayback(text,length)) return false;
+    /* The lead-in runs before RADIO_PrepareTX clears the previous attempt's status.
+       Do not let that historical status fail an accepted message before its first dit. */
+    gTxTimerCountdown_500ms=0;
+    gTxTimeoutReached=false;
+    RADIO_SetVfoState(VFO_STATE_NORMAL);
     return true;
 }
 

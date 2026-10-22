@@ -233,7 +233,7 @@
                 "ENABLE_LTO": true,
                 "ENABLE_FMRADIO": false,
                 "EDITION_STRING": "L4S Control",
-                "VERSION_STRING_2": "L4S-v1.0.0",
+                "VERSION_STRING_2": "L4S-v1.0.1",
                 "TARGET": "l4s.control"
             }
         },
